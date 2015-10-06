@@ -6,3 +6,8 @@ The standard Java AWS SDK will simply buffer all the data in memory so that it c
 RAM and delays the upload. You can write the data to a temporary file but disk IO is slow. This library provides
 an `OutputStream` that packages data written to it into chunks which are sent in a multipart upload. You can also use
 several streams and upload the data in parallel.
+
+The entrypoint is the class `StreamTransferManager`. Read more in the
+[javadoc](http://alexmojaki.github.io/s3-stream-upload/javadoc/apidocs/alex/mojaki/s3upload/StreamTransferManager.html).
+
+
