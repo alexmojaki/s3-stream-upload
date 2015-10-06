@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Wrapper around an ExecutorService that allows you to easily submit {@link Callable}s, get results via iteration,
  * and handle failure quickly. When a submitted callable throws an exception in its thread this
  * will result in a {@code RuntimeException} when iterating over results. Typical usage is as follows:
- * <p/>
+ * <p>
  * <ol>
  * <li>Create an ExecutorService and pass it to the constructor.</li>
  * <li>Create Callables and ensure that they respond to interruption, e.g. regularly call: <pre>{@code
@@ -26,14 +26,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * then {@link ExecutorService#shutdownNow()} will be called resulting in all still running callables being interrupted,
  * and a {@code RuntimeException} will be thrown </li>
  * </ol>
- * <p/>
+ * <p>
  * You can also call {@code abort()} to shut down the threads yourself.
  */
 public class ExecutorServiceResultsHandler<V> implements Iterable<V> {
 
     private ExecutorCompletionService<V> completionService;
     private ExecutorService executorService;
-    AtomicInteger taskCount = new AtomicInteger(0);
+    private AtomicInteger taskCount = new AtomicInteger(0);
 
     public ExecutorServiceResultsHandler(ExecutorService executorService) {
         this.executorService = executorService;

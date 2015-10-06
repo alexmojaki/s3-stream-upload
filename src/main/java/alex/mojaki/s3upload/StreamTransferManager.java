@@ -14,33 +14,79 @@ import java.util.concurrent.Executors;
 /**
  * Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in memory or
  * writing to disk.
- * <p/>
+ * <p>
  * The data is split into chunks and uploaded using the multipart upload API
  * without requiring you to know any details in most cases. The uploading is done on separate threads, the number of
  * which is configured by the user.
- * <p/>
+ * <p>
  * After creating an instance with details of the upload, use {@link StreamTransferManager#getMultiPartOutputStreams()}
  * to get a list
  * of {@link MultiPartOutputStream}s, one per upload thread. As you write data to these streams, call
  * {@link MultiPartOutputStream#checkSize()} regularly. When you finish, call {@link MultiPartOutputStream#close()}.
  * Parts will be uploaded to S3 as you write.
- * <p/>
+ * <p>
  * Once all streams have been closed, call {@link StreamTransferManager#complete()}. Alternatively you can call
- * {@link StreamTransferManager#abort}
+ * {@link StreamTransferManager#abort()}
  * at any point if needed.
- * <p/>
+ * <p>
+ * Here is an example. A lot of the code relates to setting up threads for creating data unrelated to the library. The
+ * essential parts are commented.
+* <pre>{@code
+    AmazonS3Client client = new AmazonS3Client(awsCreds);
+    int numStreams = 2;
+
+    // Setting up
+    final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams);
+    final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
+
+    ExecutorService pool = Executors.newFixedThreadPool(numStreams);
+    for (int i = 0; i < numStreams; i++) {
+        final int streamIndex = i;
+        pool.submit(new Runnable() {
+            public void run() {
+                try {
+                    MultiPartOutputStream outputStream = streams.get(streamIndex);
+                    for (int lineNum = 0; lineNum < 1000000; lineNum++) {
+                        String line = generateData(streamIndex, lineNum);
+
+                        // Writing data and potentially sending off a part
+                        outputStream.write(line.getBytes());
+                        try {
+                            outputStream.checkSize();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+
+                    // The stream must be closed once all the data has been written
+                    outputStream.close();
+                } catch (Exception e) {
+
+                    // Aborts all uploads
+                    manager.abort(e);
+                }
+            }
+        });
+    }
+    pool.shutdown();
+    pool.awaitTermination(5, TimeUnit.SECONDS);
+
+    // Finishing off
+    manager.complete();
+ * }</pre>
+ * <p>
  * The final file on S3 will then usually be the result of concatenating all the data written to each stream,
  * in the order that the streams were in in the list obtained from {@code getMultiPartOutputStreams()}. However this
  * may not be true if multiple streams are used and some of them produce < 5 MB of data. This is because the multipart
  * upload API does not allow the uploading of more than one part smaller than 5 MB, which leads to fundamental limits
  * on what this class can accomplish. If order of data is important to you, then either use only one stream or ensure
  * that you write at least 5 MB to every stream.
- * <p/>
+ * <p>
  * While performing the multipart upload this class will create instances of {@link InitiateMultipartUploadRequest},
  * {@link UploadPartRequest}, and {@link CompleteMultipartUploadRequest}, fill in the essential details, and send them
  * off. If you need to add additional details then override the appropriate {@code customise*Request} methods and
  * set the required properties within.
- * <p/>
+ * <p>
  * This class does not perform retries when uploading. If an exception is thrown at any stage the upload will be aborted and the
  * exception rethrown, wrapped in a {@code RuntimeException}.
  *

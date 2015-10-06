@@ -5,6 +5,7 @@ import alex.mojaki.s3upload.StreamTransferManager;
 import com.amazonaws.SDKGlobalConfiguration;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.S3ClientOptions;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.util.IOUtils;
 import com.google.common.base.Strings;
@@ -142,6 +143,7 @@ public class StreamTransferManagerTest {
     public void testTransferManager() throws Exception {
         AmazonS3Client client = new AmazonS3Client(awsCreds);
         client.setEndpoint(s3Endpoint.toString());
+        client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
 
         int numStreams = 2;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams);
@@ -166,6 +168,7 @@ public class StreamTransferManagerTest {
                         }
                         builder.append(line);
                     }
+                    outputStream.close();
                 }
             };
             pool.submit(task);

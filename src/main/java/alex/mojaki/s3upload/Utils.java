@@ -7,7 +7,7 @@ import java.lang.Thread;
 /**
  * Miscellaneous useful functions.
  */
-public class Utils {
+class Utils {
 
     /**
      * Lets you avoid dealing with {@code InterruptedException} as a checked exception and ensures

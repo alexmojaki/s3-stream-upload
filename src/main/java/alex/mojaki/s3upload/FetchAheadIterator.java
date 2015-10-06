@@ -18,7 +18,7 @@ import java.util.NoSuchElementException;
  * <li>Return {@code hasNext}.</li>
  * </ol>
  */
-public abstract class FetchAheadIterator<T> implements Iterator<T> {
+abstract class FetchAheadIterator<T> implements Iterator<T> {
     protected boolean hasNext = false;
     protected T next;
 
