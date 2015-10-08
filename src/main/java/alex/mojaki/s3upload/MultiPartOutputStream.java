@@ -4,13 +4,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.OutputStream;
-import java.util.Iterator;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 /**
  * An {@code OutputStream} which packages data written to it into discrete {@link StreamPart}s which can be obtained
- * via iteration and uploaded to S3.
+ * in a separate thread via iteration and uploaded to S3.
  * <p>
  * A single {@code MultiPartOutputStream} is allocated a range of part numbers it can assign to the {@code StreamPart}s
  * it produces, which is determined at construction.
@@ -18,59 +16,75 @@ import java.util.concurrent.BlockingQueue;
  * Creating a {@code StreamPart} is triggered when {@link MultiPartOutputStream#checkSize()} is called and the stream
  * holds enough data, so be sure to call this regularly when writing data. It's also essential to call
  * {@link MultiPartOutputStream#close()} when finished so that it can create the final {@code StreamPart} and consumers
- * can reach the end of iteration.
+ * can finish.
  */
-public class MultiPartOutputStream extends OutputStream implements Iterable<StreamPart> {
+public class MultiPartOutputStream extends OutputStream {
 
     private static final Logger log = LoggerFactory.getLogger(MultiPartOutputStream.class);
-
-    /** A 'poison pill' placed on the queue to indicate that there are no further parts. */
-    private static final StreamPart POISON = new StreamPart(null, -1);
 
     private ConvertibleOutputStream currentStream;
 
     private static final int MB = 1024 * 1024;
 
-    private static final int MIN_PART_SIZE = 10 * MB;
     public static final int S3_MIN_PART_SIZE = 5 * MB;
     private static final int STREAM_EXTRA_ROOM = MB;
-    private static final int STREAM_QUEUE_CAPACITY = 5;
 
     private BlockingQueue<StreamPart> queue;
 
     private final int partNumberStart;
     private final int partNumberEnd;
+    private final int partSize;
     private int currentPartNumber;
 
     /**
-     * Create a new stream that will produce parts with numbers in the given range.
+     * Creates a new stream that will produce parts of the given size with part numbers in the given range.
+     *
      * @param partNumberStart the part number of the first part the stream will produce. Minimum 1.
-     * @param partNumberEnd 1 more than the last part number that the parts are allowed to have. Maximum 10 001.
+     * @param partNumberEnd   1 more than the last part number that the parts are allowed to have. Maximum 10 001.
+     * @param partSize        the minimum size in bytes of parts to be produced.
+     * @param queue           where stream parts are put on production.
      */
-    public MultiPartOutputStream(int partNumberStart, int partNumberEnd) {
+    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue) {
         if (partNumberStart < 1) {
-            throw new IllegalArgumentException("The lowest allowed part number is 1.");
+            throw new IndexOutOfBoundsException("The lowest allowed part number is 1. The value given was " + partNumberStart);
         }
         if (partNumberEnd > 10001) {
-            throw new IllegalArgumentException(
-                    "The highest allowed part number is 10 000, so partNumberEnd must be at most 10 001.");
+            throw new IndexOutOfBoundsException(
+                    "The highest allowed part number is 10 000, so partNumberEnd must be at most 10 001. The value given was " + partNumberEnd);
+        }
+        if (partNumberEnd <= partNumberStart) {
+            throw new IndexOutOfBoundsException(
+                    String.format("The part number end (%d) must be greater than the part number start (%d).", partNumberEnd, partNumberStart));
+        }
+        if (partSize < S3_MIN_PART_SIZE) {
+            throw new IllegalArgumentException(String.format(
+                    "The given part size (%d) is less than 5 MB.", partSize));
         }
 
         this.partNumberStart = partNumberStart;
         this.partNumberEnd = partNumberEnd;
+        this.queue = queue;
+        this.partSize = partSize;
+
         log.info("Creating {}", this);
 
         currentPartNumber = partNumberStart;
-        queue = new ArrayBlockingQueue<StreamPart>(STREAM_QUEUE_CAPACITY);
         currentStream = new ConvertibleOutputStream(getStreamAllocatedSize());
     }
 
+    /**
+     * Returns the initial capacity in bytes of the {@code ByteArrayOutputStream} that a part uses.
+     */
     private int getStreamAllocatedSize() {
-        return MIN_PART_SIZE + S3_MIN_PART_SIZE + STREAM_EXTRA_ROOM;
+        /*
+        This consists of the size that the user asks for, the extra 5 MB to avoid small parts (see the comment in
+        checkSize()), and some extra space to make resizing and copying unlikely.
+         */
+        return partSize + S3_MIN_PART_SIZE + STREAM_EXTRA_ROOM;
     }
 
     /**
-     * Check if the stream currently contains enough data to create a new part.
+     * Checks if the stream currently contains enough data to create a new part.
      * <p>
      * Internally this puts the part on a queue, which if full will cause this method to block and potentially
      * throw an {@code InterruptedException}, in which case retrying is acceptable.
@@ -87,7 +101,7 @@ public class MultiPartOutputStream extends OutputStream implements Iterable<Stre
         on order in the StreamTransferManager and the way it handles these small parts, referred to as 'leftover'.
         Such parts are only produced when the user closes a stream that never had more than 5 MB written to it.
          */
-        if (currentStream.size() > MIN_PART_SIZE + S3_MIN_PART_SIZE) {
+        if (currentStream.size() > partSize + S3_MIN_PART_SIZE) {
             ConvertibleOutputStream newStream = currentStream.split(
                     currentStream.size() - S3_MIN_PART_SIZE,
                     getStreamAllocatedSize());
@@ -127,7 +141,7 @@ public class MultiPartOutputStream extends OutputStream implements Iterable<Stre
     }
 
     /**
-     * Packages any remaining data into a {@link StreamPart} and signals to the iterator that there are no more parts
+     * Packages any remaining data into a {@link StreamPart} and signals to the {@code StreamTransferManager} that there are no more parts
      * afterwards. You cannot write to the stream after it has been closed.
      */
     @Override
@@ -140,39 +154,12 @@ public class MultiPartOutputStream extends OutputStream implements Iterable<Stre
         try {
             putCurrentStream();
             log.info("Placing poison pill on queue for {}", this);
-            queue.put(POISON);
+            queue.put(StreamPart.POISON);
         } catch (InterruptedException e) {
             log.error("Interrupted while closing {}", this);
             Utils.throwRuntimeInterruptedException(e);
         }
         currentStream = null;
-    }
-
-    /**
-     * Returns an iterator of {@link StreamPart}s. This will block while waiting for parts to be produced (which happens
-     * when calling {@link MultiPartOutputStream#checkSize()} after writing enough data), so ensure that iteration is
-     * done in a different thread. Iteration will throw a {@code RuntimeException} if the thread is interrupted.
-     * Obtaining multiple iterators will end badly.
-     */
-    @Override
-    public Iterator<StreamPart> iterator() {
-        return new FetchAheadIterator<StreamPart>() {
-            @Override
-            public boolean hasNext() {
-                try {
-                    next = queue.take();
-                } catch (InterruptedException e) {
-                    log.error("{}: Interrupted while taking part from queue", this);
-                    Utils.throwRuntimeInterruptedException(e);
-                }
-                hasNext = next != POISON;
-                if (!hasNext) {
-                    log.info("{}: End of queue reached", this);
-                }
-                return hasNext;
-            }
-
-        };
     }
 
     @Override

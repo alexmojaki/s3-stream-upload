@@ -11,6 +11,11 @@ class StreamPart {
     private ConvertibleOutputStream stream;
     private int partNumber;
 
+    /**
+     * A 'poison pill' placed on the queue to indicate that there are no further parts from a stream.
+     */
+    static final StreamPart POISON = new StreamPart(null, -1);
+
     public StreamPart(ConvertibleOutputStream stream, int partNumber) {
         this.stream = stream;
         this.partNumber = partNumber;

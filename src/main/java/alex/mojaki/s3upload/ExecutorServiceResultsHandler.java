@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <li>Create an ExecutorService and pass it to the constructor.</li>
  * <li>Create Callables and ensure that they respond to interruption, e.g. regularly call: <pre>{@code
  *     if (Thread.currentThread().isInterrupted()) {
- * throw new RuntimeException("The thread was interrupted, likely indicating failure in a sibling thread.");
+ *         throw new RuntimeException("The thread was interrupted, likely indicating failure in a sibling thread.");
  *     }}</pre></li>
  * <li>Pass the callables to the {@code submit()} method.</li>
  * <li>Call {@code finishedSubmitting()}.</li>

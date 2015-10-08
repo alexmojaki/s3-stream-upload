@@ -146,7 +146,11 @@ public class StreamTransferManagerTest {
         client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
 
         int numStreams = 2;
-        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams);
+        int numUploadThreads = 2;
+        int queueCapacity = 2;
+        int partSize = 5;
+        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams,
+                numUploadThreads, queueCapacity, partSize);
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
         ExecutorService pool = Executors.newFixedThreadPool(numStreams);
