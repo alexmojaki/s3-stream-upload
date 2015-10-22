@@ -33,7 +33,7 @@ class ConvertibleOutputStream extends ByteArrayOutputStream {
      */
     public ConvertibleOutputStream split(int countToKeep, int initialCapacityForNewStream) {
         int newCount = count - countToKeep;
-        log.info("Splitting stream of size {} into parts with sizes {} and {}", count, countToKeep, newCount);
+        log.debug("Splitting stream of size {} into parts with sizes {} and {}", count, countToKeep, newCount);
         initialCapacityForNewStream = Math.max(initialCapacityForNewStream, newCount);
         ConvertibleOutputStream newStream = new ConvertibleOutputStream(initialCapacityForNewStream);
         newStream.write(buf, countToKeep, newCount);

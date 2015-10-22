@@ -66,7 +66,7 @@ public class MultiPartOutputStream extends OutputStream {
         this.queue = queue;
         this.partSize = partSize;
 
-        log.info("Creating {}", this);
+        log.debug("Creating {}", this);
 
         currentPartNumber = partNumberStart;
         currentStream = new ConvertibleOutputStream(getStreamAllocatedSize());
@@ -121,7 +121,7 @@ public class MultiPartOutputStream extends OutputStream {
                             partNumberStart, partNumberEnd));
         }
         StreamPart streamPart = new StreamPart(currentStream, currentPartNumber++);
-        log.info("Putting {} on queue", streamPart);
+        log.debug("Putting {} on queue", streamPart);
         queue.put(streamPart);
     }
 
@@ -153,7 +153,7 @@ public class MultiPartOutputStream extends OutputStream {
         }
         try {
             putCurrentStream();
-            log.info("Placing poison pill on queue for {}", this);
+            log.debug("Placing poison pill on queue for {}", this);
             queue.put(StreamPart.POISON);
         } catch (InterruptedException e) {
             log.error("Interrupted while closing {}", this);

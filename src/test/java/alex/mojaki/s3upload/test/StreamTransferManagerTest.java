@@ -2,11 +2,14 @@ package alex.mojaki.s3upload.test;
 
 import alex.mojaki.s3upload.MultiPartOutputStream;
 import alex.mojaki.s3upload.StreamTransferManager;
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.SDKGlobalConfiguration;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.util.IOUtils;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -139,9 +142,9 @@ public class StreamTransferManagerTest {
     }
 
     @Test
-    @Ignore
     public void testTransferManager() throws Exception {
-        AmazonS3Client client = new AmazonS3Client(awsCreds);
+        AmazonS3Client client = new AmazonS3Client(awsCreds,
+                new ClientConfiguration().withSignerOverride("S3SignerType"));
         client.setEndpoint(s3Endpoint.toString());
         client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
 
@@ -150,7 +153,19 @@ public class StreamTransferManagerTest {
         int queueCapacity = 2;
         int partSize = 5;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams,
-                numUploadThreads, queueCapacity, partSize);
+                numUploadThreads, queueCapacity, partSize) {
+
+            @Override
+            public void customiseUploadPartRequest(UploadPartRequest request) {
+                /*
+                Workaround from https://github.com/andrewgaul/s3proxy/commit/50a302436271ec46ce81a415b4208b9e14fcaca4
+                to deal with https://github.com/andrewgaul/s3proxy/issues/80
+                 */
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentType("application/unknown");
+                request.setObjectMetadata(metadata);
+            }
+        };
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
         ExecutorService pool = Executors.newFixedThreadPool(numStreams);

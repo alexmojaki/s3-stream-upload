@@ -154,7 +154,7 @@ public class StreamTransferManager {
         this.s3Client = s3Client;
         queue = new ArrayBlockingQueue<StreamPart>(queueCapacity);
 
-        log.info("Initiating multipart upload to {}/{}", bucketName, putKey);
+        log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
         InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucketName, putKey);
         customiseInitiateRequest(initRequest);
         InitiateMultipartUploadResult initResponse = s3Client.initiateMultipartUpload(initRequest);
@@ -198,15 +198,15 @@ public class StreamTransferManager {
      */
     public void complete() {
         try {
-            log.info("{}: Waiting for pool termination", this);
+            log.debug("{}: Waiting for pool termination", this);
             executorServiceResultsHandler.awaitCompletion();
-            log.info("{}: Pool terminated", this);
+            log.debug("{}: Pool terminated", this);
             if (leftoverStreamPart != null) {
                 log.info("{}: Uploading leftover stream {}", leftoverStreamPart);
                 uploadStreamPart(leftoverStreamPart);
-                log.info("{}: Leftover uploaded", this);
+                log.debug("{}: Leftover uploaded", this);
             }
-            log.info("{}: Completing", this);
+            log.debug("{}: Completing", this);
             CompleteMultipartUploadRequest completeRequest = new
                     CompleteMultipartUploadRequest(
                     bucketName,
@@ -241,7 +241,7 @@ public class StreamTransferManager {
             isAborting = true;
         }
         executorServiceResultsHandler.abort();
-        log.info("{}: Aborting", this);
+        log.debug("{}: Aborting", this);
         AbortMultipartUploadRequest abortMultipartUploadRequest = new AbortMultipartUploadRequest(
                 bucketName, putKey, uploadId);
         s3Client.abortMultipartUpload(abortMultipartUploadRequest);
@@ -274,13 +274,13 @@ public class StreamTransferManager {
                     uploaded without problems. After the threads have completed there may be at most one leftover
                     part remaining, which S3 can accept. It is uploaded in the complete() method.
                     */
-                        log.info("{}: Received part {} < 5 MB that needs to be handled as 'leftover'", this, part);
+                        log.debug("{}: Received part {} < 5 MB that needs to be handled as 'leftover'", this, part);
                         StreamPart originalPart = part;
                         part = null;
                         synchronized (leftoverStreamPartLock) {
                             if (leftoverStreamPart == null) {
                                 leftoverStreamPart = originalPart;
-                                log.info("{}: Created new leftover part {}", this, leftoverStreamPart);
+                                log.debug("{}: Created new leftover part {}", this, leftoverStreamPart);
                             } else {
                                 /*
                                 Try to preserve order within the data by appending the part with the higher number
@@ -293,9 +293,9 @@ public class StreamTransferManager {
                                     leftoverStreamPart = temp;
                                 }
                                 leftoverStreamPart.getOutputStream().append(originalPart.getOutputStream());
-                                log.info("{}: Merged with existing leftover part to create {}", this, leftoverStreamPart);
+                                log.debug("{}: Merged with existing leftover part to create {}", this, leftoverStreamPart);
                                 if (leftoverStreamPart.size() >= MultiPartOutputStream.S3_MIN_PART_SIZE) {
-                                    log.info("{}: Leftover part can now be uploaded as normal and reset", this);
+                                    log.debug("{}: Leftover part can now be uploaded as normal and reset", this);
                                     part = leftoverStreamPart;
                                     leftoverStreamPart = null;
                                 }
@@ -317,7 +317,7 @@ public class StreamTransferManager {
     }
 
     private void uploadStreamPart(StreamPart part) {
-        log.info("{}: Uploading {}", this, part);
+        log.debug("{}: Uploading {}", this, part);
 
         UploadPartRequest uploadRequest = new UploadPartRequest()
                 .withBucketName(bucketName).withKey(putKey)
