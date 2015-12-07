@@ -129,6 +129,7 @@ public class StreamTransferManager {
      * @param queueCapacity    the capacity of the queue that holds parts yet to be uploaded.
      * @param partSize         the minimum size of each part in MB before it gets uploaded. Minimum is 5 due to limitations of S3.
      *                         More than 500 is not useful in most cases as this corresponds to the limit of 5 TB total for any upload.
+     * @param autoflush        if true then check stream size and create stream partitions automatically
      */
     public StreamTransferManager(String bucketName,
                                  String putKey,
@@ -136,7 +137,8 @@ public class StreamTransferManager {
                                  int numStreams,
                                  int numUploadThreads,
                                  int queueCapacity,
-                                 int partSize) {
+                                 int partSize,
+                                 boolean autoflush) {
         if (numStreams <= 0) {
             throw new IllegalArgumentException("There must be at least one stream");
         }
@@ -169,7 +171,7 @@ public class StreamTransferManager {
 
             for (int i = 0; i < numStreams; i++) {
                 int partNumberEnd = (i + 1) * MAX_PART_NUMBER / numStreams + 1;
-                MultiPartOutputStream multiPartOutputStream = new MultiPartOutputStream(partNumberStart, partNumberEnd, partSize, queue);
+                MultiPartOutputStream multiPartOutputStream = new MultiPartOutputStream(partNumberStart, partNumberEnd, partSize, autoflush, queue);
                 partNumberStart = partNumberEnd;
                 multiPartOutputStreams.add(multiPartOutputStream);
             }

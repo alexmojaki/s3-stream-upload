@@ -35,6 +35,7 @@ public class MultiPartOutputStream extends OutputStream {
     private final int partNumberEnd;
     private final int partSize;
     private int currentPartNumber;
+    private boolean autoflush;
 
     /**
      * Creates a new stream that will produce parts of the given size with part numbers in the given range.
@@ -42,9 +43,10 @@ public class MultiPartOutputStream extends OutputStream {
      * @param partNumberStart the part number of the first part the stream will produce. Minimum 1.
      * @param partNumberEnd   1 more than the last part number that the parts are allowed to have. Maximum 10 001.
      * @param partSize        the minimum size in bytes of parts to be produced.
+     * @param autoflush       if true then check stream size and create stream partitions automatically
      * @param queue           where stream parts are put on production.
      */
-    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue) {
+    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, boolean autoflush, BlockingQueue<StreamPart> queue) {
         if (partNumberStart < 1) {
             throw new IndexOutOfBoundsException("The lowest allowed part number is 1. The value given was " + partNumberStart);
         }
@@ -65,6 +67,7 @@ public class MultiPartOutputStream extends OutputStream {
         this.partNumberEnd = partNumberEnd;
         this.queue = queue;
         this.partSize = partSize;
+        this.autoflush = autoflush;
 
         log.debug("Creating {}", this);
 
@@ -128,16 +131,37 @@ public class MultiPartOutputStream extends OutputStream {
     @Override
     public void write(int b) {
         currentStream.write(b);
+        if(autoflush){
+            try {
+                checkSize();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     @Override
     public void write(byte b[], int off, int len) {
         currentStream.write(b, off, len);
+        if(autoflush){
+            try {
+                checkSize();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     @Override
     public void write(byte b[]) {
         write(b, 0, b.length);
+        if(autoflush){
+            try {
+                checkSize();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     /**
