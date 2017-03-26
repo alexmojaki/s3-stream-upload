@@ -17,6 +17,6 @@ This is available from maven central. You can include it as a dependency in `pom
 <dependency>
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>1.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```

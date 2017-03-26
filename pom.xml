@@ -6,7 +6,7 @@
 
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>1.0</version>
+    <version>1.0.1</version>
 
     <name>S3 Stream Upload</name>
     <description>Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in
@@ -50,6 +50,7 @@
             <groupId>org.gaul</groupId>
             <artifactId>s3proxy</artifactId>
             <version>1.4.0</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
