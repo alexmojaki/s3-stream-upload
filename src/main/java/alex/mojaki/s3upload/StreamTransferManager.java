@@ -163,7 +163,7 @@ public class StreamTransferManager {
         try {
             partETags = new ArrayList<PartETag>();
             multiPartOutputStreams = new ArrayList<MultiPartOutputStream>();
-            ExecutorService threadPool = Executors.newFixedThreadPool(numStreams);
+            ExecutorService threadPool = Executors.newFixedThreadPool(numUploadThreads);
 
             int partNumberStart = 1;
 

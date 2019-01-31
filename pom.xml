@@ -65,7 +65,7 @@
             <dependency>
                 <groupId>com.amazonaws</groupId>
                 <artifactId>aws-java-sdk-bom</artifactId>
-                <version>1.10.20</version>
+                <version>1.11.490</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -132,13 +132,6 @@
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.5</version>
                 <executions>
-                    <execution>
-                        <id>sign-artifacts</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>sign</goal>
-                        </goals>
-                    </execution>
                 </executions>
             </plugin>
         </plugins>
