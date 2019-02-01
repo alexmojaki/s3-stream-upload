@@ -5,6 +5,7 @@ import com.amazonaws.services.s3.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -112,6 +113,7 @@ public class StreamTransferManager {
     private final Object leftoverStreamPartLock = new Object();
     private boolean isAborting = false;
     private static final int MAX_PART_NUMBER = 10000;
+    private boolean compressOnTheFly = false;
 
     /**
      * Initiates a multipart upload to S3 using the first three parameters. Creates several
@@ -137,6 +139,37 @@ public class StreamTransferManager {
                                  int numUploadThreads,
                                  int queueCapacity,
                                  int partSize) {
+        this(bucketName, putKey, s3Client, numStreams, numUploadThreads, queueCapacity, partSize, false);
+    }
+        /**
+         * Initiates a multipart upload to S3 using the first three parameters. Creates several
+         * {@link MultiPartOutputStream}s and threads to upload the parts they produce in parallel.
+         * Parts that have been produced sit in a queue of specified capacity while they wait for a thread to upload them.
+         * The worst case memory usage is therefore {@code (numStreams + numUploadThreads + queueCapacity) * partSize},
+         * while higher values for these first three parameters may lead to better resource usage and throughput.
+         * <p>
+         * S3 allows at most 10 000 parts to be uploaded. This means that if you are uploading very large files, the part
+         * size must be big enough to compensate. Moreover the part numbers are distributed equally among streams so keep
+         * this in mind if you might write much more data to some streams than others.
+         *
+         * @param numStreams       the number of multiPartOutputStreams that will be created for you to write to.
+         * @param numUploadThreads the number of threads that will upload parts as they are produced.
+         * @param queueCapacity    the capacity of the queue that holds parts yet to be uploaded.
+         * @param partSize         the minimum size of each part in MB before it gets uploaded. Minimum is 5 due to limitations of S3.
+         *                         More than 500 is not useful in most cases as this corresponds to the limit of 5 TB total for any upload.
+         * @param compressOnTheFly whether to compress the data on the fly during upload. This speeds up upload of compressed data.
+         *                         With this option, do not GZip your data but write uncompressed data directly into stream. It'll appear gzipped in S3.
+         *                         Keep in mind that you may want to increase the buffer size in this case, as it refers to the uncompressed buffer size so it needs to be larger
+         *                         than 5MB of your compressed data (in order words, if 5MB of your compressed data is 50MB uncompressed, set buffer size to at least 50MB).
+         */
+    public StreamTransferManager(String bucketName,
+                                 String putKey,
+                                 AmazonS3 s3Client,
+                                 int numStreams,
+                                 int numUploadThreads,
+                                 int queueCapacity,
+                                 int partSize,
+                                 boolean compressOnTheFly) {
         if (numStreams <= 0) {
             throw new IllegalArgumentException("There must be at least one stream");
         }
@@ -152,6 +185,7 @@ public class StreamTransferManager {
         this.bucketName = bucketName;
         this.putKey = putKey;
         this.s3Client = s3Client;
+        this.compressOnTheFly = compressOnTheFly;
         queue = new ArrayBlockingQueue<StreamPart>(queueCapacity);
 
         log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
@@ -169,7 +203,7 @@ public class StreamTransferManager {
 
             for (int i = 0; i < numStreams; i++) {
                 int partNumberEnd = (i + 1) * MAX_PART_NUMBER / numStreams + 1;
-                MultiPartOutputStream multiPartOutputStream = new MultiPartOutputStream(partNumberStart, partNumberEnd, partSize, queue);
+                MultiPartOutputStream multiPartOutputStream = new MultiPartOutputStream(partNumberStart, partNumberEnd, partSize, queue, compressOnTheFly);
                 partNumberStart = partNumberEnd;
                 multiPartOutputStreams.add(multiPartOutputStream);
             }
@@ -307,6 +341,7 @@ public class StreamTransferManager {
                     }
                 }
             } catch (Throwable t) {
+                log.error("Exception in Upload", t);
                 abort(t);
                 throw new RuntimeException(t);
             }
@@ -316,14 +351,14 @@ public class StreamTransferManager {
 
     }
 
-    private void uploadStreamPart(StreamPart part) {
+    private void uploadStreamPart(StreamPart part) throws IOException {
         log.debug("{}: Uploading {}", this, part);
 
         UploadPartRequest uploadRequest = new UploadPartRequest()
                 .withBucketName(bucketName).withKey(putKey)
                 .withUploadId(uploadId).withPartNumber(part.getPartNumber())
                 .withInputStream(part.getInputStream())
-                .withPartSize(part.size());
+                .withPartSize(compressOnTheFly ? part.getCompressedSize() : part.size());
         customiseUploadPartRequest(uploadRequest);
 
         UploadPartResult uploadPartResult = s3Client.uploadPart(uploadRequest);

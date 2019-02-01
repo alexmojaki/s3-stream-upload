@@ -15,6 +15,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
 import com.google.inject.Module;
+import org.eclipse.jetty.util.ArrayUtil;
 import org.eclipse.jetty.util.component.AbstractLifeCycle;
 import org.gaul.s3proxy.S3Proxy;
 import org.gaul.s3proxy.S3ProxyConstants;
@@ -26,15 +27,14 @@ import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * A WIP test using s3proxy to avoid requiring actually connecting to a real S3 bucket.
@@ -178,7 +178,7 @@ public class StreamTransferManagerTest {
                 public void run() {
                     MultiPartOutputStream outputStream = streams.get(streamIndex);
                     for (int lineNum = 0; lineNum < 1000000; lineNum++) {
-                        String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
+                        String line = UUID.randomUUID().toString();
                         outputStream.write(line.getBytes());
                         try {
                             outputStream.checkSize();
@@ -207,6 +207,83 @@ public class StreamTransferManagerTest {
         IOUtils.closeQuietly(objectContent, null);
 
         Assert.assertEquals(expectedResult, result);
+    }
+    @Test
+    public void testTransferManagerWithCompression() throws Exception {
+        AmazonS3Client client = new AmazonS3Client(awsCreds,
+                new ClientConfiguration().withSignerOverride("S3SignerType"));
+        client.setEndpoint(s3Endpoint.toString());
+        client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
+
+        int numStreams = 2;
+        int numUploadThreads = 2;
+        int queueCapacity = 2;
+        int partSize = 50;
+        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams,
+                numUploadThreads, queueCapacity, partSize, true) {
+
+            @Override
+            public void customiseUploadPartRequest(UploadPartRequest request) {
+                /*
+                Workaround from https://github.com/andrewgaul/s3proxy/commit/50a302436271ec46ce81a415b4208b9e14fcaca4
+                to deal with https://github.com/andrewgaul/s3proxy/issues/80
+                 */
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentType("application/unknown");
+                request.setObjectMetadata(metadata);
+            }
+        };
+        final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
+        List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
+        ExecutorService pool = Executors.newFixedThreadPool(numStreams);
+        for (int i = 0; i < numStreams; i++) {
+            final int streamIndex = i;
+            final StringBuilder builder = new StringBuilder();
+            builders.add(builder);
+            Runnable task = new Runnable() {
+                @Override
+                public void run() {
+                    MultiPartOutputStream outputStream = streams.get(streamIndex);
+                    for (int lineNum = 0; lineNum < 1000000; lineNum++) {
+                        String line = UUID.randomUUID().toString();
+                        outputStream.write(line.getBytes());
+                        try {
+                            outputStream.checkSize();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                        builder.append(line);
+                    }
+                    outputStream.close();
+                }
+            };
+            pool.submit(task);
+        }
+        pool.shutdown();
+        pool.awaitTermination(5, TimeUnit.SECONDS);
+        manager.complete();
+
+        ByteArrayOutputStream allOut = new ByteArrayOutputStream();
+        for (int i = 0; i < numStreams; i++) {
+            ByteArrayOutputStream bot = new ByteArrayOutputStream();
+            GZIPOutputStream gop = new GZIPOutputStream(bot);
+            gop.write(builders.get(i).toString().getBytes());
+            gop.close();
+            byte[] compressed = bot.toByteArray();
+            allOut.write(compressed);
+        }
+        byte[] compressed = allOut.toByteArray();
+
+        S3ObjectInputStream objectContent = client.getObject(containerName, key).getObjectContent();
+        byte[] contentBytes = IOUtils.toByteArray(objectContent);
+        IOUtils.closeQuietly(objectContent, null);
+
+        Assert.assertEquals(compressed.length, contentBytes.length);
+        for (int i = 0; i < compressed.length; i++) {
+            if (compressed[i] != contentBytes[i]) {
+                Assert.fail();
+            }
+        }
     }
 
     private static String createRandomContainerName() {

@@ -21,6 +21,7 @@ import java.util.concurrent.BlockingQueue;
 public class MultiPartOutputStream extends OutputStream {
 
     private static final Logger log = LoggerFactory.getLogger(MultiPartOutputStream.class);
+    private boolean compressOnTheFly;
 
     private ConvertibleOutputStream currentStream;
 
@@ -44,7 +45,7 @@ public class MultiPartOutputStream extends OutputStream {
      * @param partSize        the minimum size in bytes of parts to be produced.
      * @param queue           where stream parts are put on production.
      */
-    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue) {
+    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue, boolean compressOnTheFly) {
         if (partNumberStart < 1) {
             throw new IndexOutOfBoundsException("The lowest allowed part number is 1. The value given was " + partNumberStart);
         }
@@ -65,11 +66,12 @@ public class MultiPartOutputStream extends OutputStream {
         this.partNumberEnd = partNumberEnd;
         this.queue = queue;
         this.partSize = partSize;
+        this.compressOnTheFly = compressOnTheFly;
 
         log.debug("Creating {}", this);
 
         currentPartNumber = partNumberStart;
-        currentStream = new ConvertibleOutputStream(getStreamAllocatedSize());
+        currentStream = new ConvertibleOutputStream(getStreamAllocatedSize(), compressOnTheFly);
     }
 
     /**

@@ -1,5 +1,6 @@
 package alex.mojaki.s3upload;
 
+import java.io.IOException;
 import java.io.InputStream;
 
 /**
@@ -29,12 +30,15 @@ class StreamPart {
         return stream;
     }
 
-    public InputStream getInputStream() {
+    public InputStream getInputStream() throws IOException {
         return stream.toInputStream();
     }
 
-    public long size() {
+    public int size() {
         return stream.size();
+    }
+    public int getCompressedSize() {
+        return stream.getCompressedSize();
     }
 
     @Override
