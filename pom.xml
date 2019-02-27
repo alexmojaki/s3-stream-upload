@@ -6,7 +6,7 @@
 
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 
     <name>S3 Stream Upload</name>
     <description>Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in
@@ -138,6 +138,9 @@
                         <goals>
                             <goal>sign</goal>
                         </goals>
+                        <configuration>
+                            <keyname>0xCAE6FC1421CE3CC3237EDE8F3D69E203C4998152</keyname>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

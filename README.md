@@ -11,12 +11,12 @@ The entrypoint is the class `StreamTransferManager`. Read more in the
 [javadoc](http://alexmojaki.github.io/s3-stream-upload/javadoc/apidocs/alex/mojaki/s3upload/StreamTransferManager.html),
 including a usage example.
 
-This is available from maven central. You can include it as a dependency in `pom.xml`:
+This is available from [maven central](https://mvnrepository.com/artifact/com.github.alexmojaki/s3-stream-upload). You can include it as a dependency in `pom.xml`:
 
 ```
 <dependency>
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
