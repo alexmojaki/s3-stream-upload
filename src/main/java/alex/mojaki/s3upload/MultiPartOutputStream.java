@@ -95,7 +95,7 @@ public class MultiPartOutputStream extends OutputStream {
         for the next part. For example, suppose the following. A stream is producing parts of 10 MB. Someone writes
         10 MB and then calls this method, and then writes only 3 MB more before closing. If the initial 10 MB were
         immediately packaged into a StreamPart and a new ConvertibleOutputStream was started on for the rest, it would
-        end up producing a part with just 5 MB. So instead the class waits until it contains 15 MB of data and then it
+        end up producing a part with just 3 MB. So instead the class waits until it contains 15 MB of data and then it
         splits the stream into two: one with 10 MB that gets produced as a part, and one with 5 MB that it continues with.
         In this way users of the class are less likely to encounter parts < 5 MB which cause trouble: see the caveat
         on order in the StreamTransferManager and the way it handles these small parts, referred to as 'leftover'.
