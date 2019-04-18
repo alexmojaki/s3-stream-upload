@@ -71,6 +71,12 @@ public class ExecutorServiceResultsHandler<V> implements Iterable<V> {
                 abort();
                 throw new RuntimeException(exception);
             }
+
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException("remove");
+            }
+
         };
     }
 
