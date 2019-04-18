@@ -92,6 +92,7 @@ public class ExecutorServiceResultsHandler<V> implements Iterable<V> {
      * Convenience method to wait for the callables to finish for when you don't care about the results.
      */
     public void awaitCompletion() {
+        //noinspection StatementWithEmptyBody
         for (V ignored : this) {
             // do nothing
         }

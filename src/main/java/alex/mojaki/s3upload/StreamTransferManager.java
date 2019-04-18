@@ -255,6 +255,7 @@ public class StreamTransferManager {
             try {
                 while (true) {
                     StreamPart part;
+                    //noinspection SynchronizeOnNonFinalField
                     synchronized (queue) {
                         if (finishedCount < multiPartOutputStreams.size()) {
                             part = queue.take();
@@ -340,12 +341,15 @@ public class StreamTransferManager {
 
     // These methods are intended to be overridden for more specific interactions with the AWS API.
 
+    @SuppressWarnings("unused")
     public void customiseInitiateRequest(InitiateMultipartUploadRequest request) {
     }
 
+    @SuppressWarnings("unused")
     public void customiseUploadPartRequest(UploadPartRequest request) {
     }
 
+    @SuppressWarnings("unused")
     public void customiseCompleteRequest(CompleteMultipartUploadRequest request) {
     }
 
