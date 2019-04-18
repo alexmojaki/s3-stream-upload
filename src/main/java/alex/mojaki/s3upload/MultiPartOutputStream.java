@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import java.io.OutputStream;
 import java.util.concurrent.BlockingQueue;
 
+import static com.amazonaws.services.s3.internal.Constants.MB;
+
 /**
  * An {@code OutputStream} which packages data written to it into discrete {@link StreamPart}s which can be obtained
  * in a separate thread via iteration and uploaded to S3.
@@ -23,8 +25,6 @@ public class MultiPartOutputStream extends OutputStream {
     private static final Logger log = LoggerFactory.getLogger(MultiPartOutputStream.class);
 
     private ConvertibleOutputStream currentStream;
-
-    private static final int MB = 1024 * 1024;
 
     public static final int S3_MIN_PART_SIZE = 5 * MB;
     private static final int STREAM_EXTRA_ROOM = MB;
