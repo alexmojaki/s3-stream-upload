@@ -15,10 +15,12 @@ import static com.amazonaws.services.s3.internal.Constants.MB;
  * A single {@code MultiPartOutputStream} is allocated a range of part numbers it can assign to the {@code StreamPart}s
  * it produces, which is determined at construction.
  * <p>
- * Creating a {@code StreamPart} is triggered when {@link MultiPartOutputStream#checkSize()} is called and the stream
- * holds enough data, so be sure to call this regularly when writing data. It's also essential to call
+ * It's essential to call
  * {@link MultiPartOutputStream#close()} when finished so that it can create the final {@code StreamPart} and consumers
  * can finish.
+ * <p>
+ * Writing to the stream may lead to trying to place a completed part on a queue,
+ * which will block if the queue is full and may lead to an {@code InterruptedException}.
  */
 public class MultiPartOutputStream extends OutputStream {
 
@@ -44,7 +46,7 @@ public class MultiPartOutputStream extends OutputStream {
      * @param partSize        the minimum size in bytes of parts to be produced.
      * @param queue           where stream parts are put on production.
      */
-    public MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue) {
+    MultiPartOutputStream(int partNumberStart, int partNumberEnd, int partSize, BlockingQueue<StreamPart> queue) {
         if (partNumberStart < 1) {
             throw new IndexOutOfBoundsException("The lowest allowed part number is 1. The value given was " + partNumberStart);
         }
@@ -85,11 +87,8 @@ public class MultiPartOutputStream extends OutputStream {
 
     /**
      * Checks if the stream currently contains enough data to create a new part.
-     * <p>
-     * Internally this puts the part on a queue, which if full will cause this method to block and potentially
-     * throw an {@code InterruptedException}, in which case retrying is acceptable.
      */
-    public void checkSize() throws InterruptedException {
+    private void checkSize() {
         /*
         This class avoids producing parts < 5 MB if possible by only producing a part when it has an extra 5 MB to spare
         for the next part. For example, suppose the following. A stream is producing parts of 10 MB. Someone writes
@@ -110,7 +109,7 @@ public class MultiPartOutputStream extends OutputStream {
         }
     }
 
-    private void putCurrentStream() throws InterruptedException {
+    private void putCurrentStream() {
         if (currentStream.size() == 0) {
             return;
         }
@@ -122,22 +121,29 @@ public class MultiPartOutputStream extends OutputStream {
         }
         StreamPart streamPart = new StreamPart(currentStream, currentPartNumber++);
         log.debug("Putting {} on queue", streamPart);
-        queue.put(streamPart);
+        try {
+            queue.put(streamPart);
+        } catch (InterruptedException e) {
+            Utils.throwRuntimeInterruptedException(e);
+        }
     }
 
     @Override
     public void write(int b) {
         currentStream.write(b);
+        checkSize();
     }
 
     @Override
     public void write(byte b[], int off, int len) {
         currentStream.write(b, off, len);
+        checkSize();
     }
 
     @Override
     public void write(byte b[]) {
         write(b, 0, b.length);
+        checkSize();
     }
 
     /**

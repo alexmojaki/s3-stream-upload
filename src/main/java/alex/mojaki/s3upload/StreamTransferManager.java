@@ -20,8 +20,7 @@ import static com.amazonaws.services.s3.internal.Constants.MB;
  * <p>
  * After creating an instance with details of the upload, use {@link StreamTransferManager#getMultiPartOutputStreams()}
  * to get a list
- * of {@link MultiPartOutputStream}s. As you write data to these streams, call
- * {@link MultiPartOutputStream#checkSize()} regularly. When you finish, call {@link MultiPartOutputStream#close()}.
+ * of {@link MultiPartOutputStream}s. When you finish writing data, call {@link MultiPartOutputStream#close()}.
  * Parts will be uploaded to S3 as you write.
  * <p>
  * Once all streams have been closed, call {@link StreamTransferManager#complete()}. Alternatively you can call
@@ -54,11 +53,6 @@ import static com.amazonaws.services.s3.internal.Constants.MB;
 
                         // Writing data and potentially sending off a part
                         outputStream.write(line.getBytes());
-                        try {
-                            outputStream.checkSize();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
                     }
 
                     // The stream must be closed once all the data has been written

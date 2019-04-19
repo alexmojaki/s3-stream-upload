@@ -107,6 +107,7 @@ public class StreamTransferManagerTest {
         S3Proxy.Builder s3ProxyBuilder = S3Proxy.builder()
                 .blobStore(blobStore)
                 .endpoint(s3Endpoint);
+        //noinspection ConstantConditions
         if (s3Identity != null || s3Credential != null) {
             s3ProxyBuilder.awsAuthentication(s3Identity, s3Credential);
         }
@@ -180,11 +181,6 @@ public class StreamTransferManagerTest {
                     for (int lineNum = 0; lineNum < 1000000; lineNum++) {
                         String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
                         outputStream.write(line.getBytes());
-                        try {
-                            outputStream.checkSize();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
                         builder.append(line);
                     }
                     outputStream.close();
