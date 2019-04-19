@@ -9,13 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
+import static com.amazonaws.services.s3.internal.Constants.MB;
+
 // @formatter:off
 /**
  * Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in memory or
  * writing to disk.
  * <p>
- * The data is split into chunks and uploaded using the multipart upload API.
- * The uploading is done on separate threads, the number of which is configured by the user.
+ * The data is split into chunks and uploaded using the multipart upload API by one or more separate threads.
  * <p>
  * After creating an instance with details of the upload, use {@link StreamTransferManager#getMultiPartOutputStreams()}
  * to get a list
@@ -31,14 +32,14 @@ import java.util.concurrent.*;
  * essential parts are commented.
 * <pre>{@code
     AmazonS3Client client = new AmazonS3Client(awsCreds);
-    int numStreams = 2;
-    int numUploadThreads = 2;
-    int queueCapacity = 2;
-    int partSize = 5;
 
     // Setting up
-    final StreamTransferManager manager = new StreamTransferManager(bucket, key, client, numStreams,
-                                                                    numUploadThreads, queueCapacity, partSize);
+    int numStreams = 2;
+    final StreamTransferManager manager = new StreamTransferManager(bucket, key, client)
+            .numStreams(numStreams)
+            .numUploadThreads(2)
+            .queueCapacity(2)
+            .partSize(10);
     final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
 
     ExecutorService pool = Executors.newFixedThreadPool(numStreams);
@@ -91,6 +92,11 @@ import java.util.concurrent.*;
  * <p>
  * This class does not perform retries when uploading. If an exception is thrown at any stage the upload will be aborted and the
  * exception rethrown, wrapped in a {@code RuntimeException}.
+ * <p>
+ * You can configure the upload process by calling any of the chaining setter methods {@link StreamTransferManager#numStreams(int)}, {@link StreamTransferManager#numUploadThreads(int)}, {@link StreamTransferManager#queueCapacity(int)}, or {@link StreamTransferManager#partSize(long)} before calling {@code getMultiPartOutputStreams}. Parts that have been produced sit in a queue of specified capacity while they wait for a thread to upload them.
+ * The worst case memory usage is {@code (numUploadThreads + queueCapacity) * partSize + numStreams * (partSize + 6MB)},
+ * while higher values for these first three parameters may lead to better resource usage and throughput.
+ * If you are uploading very large files, you may need to increase the part size - see {@link StreamTransferManager#partSize(long)} for details.
  *
  * @author Alex Hall
  */
@@ -102,34 +108,155 @@ public class StreamTransferManager {
     protected final String bucketName;
     protected final String putKey;
     protected final AmazonS3 s3Client;
-    protected final String uploadId;
-    private final List<PartETag> partETags;
-    private final List<MultiPartOutputStream> multiPartOutputStreams;
-    private final ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
-    private final BlockingQueue<StreamPart> queue;
+    protected String uploadId;
+    protected int numStreams = 1;
+    protected int numUploadThreads = 1;
+    protected int queueCapacity = 1;
+    protected int partSize = 5 * MB;
+    private List<PartETag> partETags;
+    private List<MultiPartOutputStream> multiPartOutputStreams;
+    private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
+    private BlockingQueue<StreamPart> queue;
     private int finishedCount = 0;
     private StreamPart leftoverStreamPart = null;
     private final Object leftoverStreamPartLock = new Object();
     private boolean isAborting = false;
     private static final int MAX_PART_NUMBER = 10000;
 
+    public StreamTransferManager(String bucketName,
+                                 String putKey,
+                                 AmazonS3 s3Client) {
+        this.bucketName = bucketName;
+        this.putKey = putKey;
+        this.s3Client = s3Client;
+    }
+
     /**
-     * Initiates a multipart upload to S3 using the first three parameters. Creates several
-     * {@link MultiPartOutputStream}s and threads to upload the parts they produce in parallel.
-     * Parts that have been produced sit in a queue of specified capacity while they wait for a thread to upload them.
-     * The worst case memory usage is therefore {@code (numStreams + numUploadThreads + queueCapacity) * partSize},
-     * while higher values for these first three parameters may lead to better resource usage and throughput.
+     * Sets the number of {@link MultiPartOutputStream}s that will be created and returned by
+     * {@link StreamTransferManager#getMultiPartOutputStreams()} for you to write to.
      * <p>
-     * S3 allows at most 10 000 parts to be uploaded. This means that if you are uploading very large files, the part
-     * size must be big enough to compensate. Moreover the part numbers are distributed equally among streams so keep
-     * this in mind if you might write much more data to some streams than others.
+     * By default this is 1, increase it if you want to write to multiple streams from different
+     * threads in parallel.
+     * <p>
+     * If you are writing large files with many streams, you may need to increase the part size
+     * to avoid running out of part numbers - see {@link StreamTransferManager#partSize(long)}
+     * for more details.
+     * <p>
+     * Each stream may hold up to {@link StreamTransferManager#partSize(long)} + 6MB
+     * in memory at a time.
      *
-     * @param numStreams       the number of multiPartOutputStreams that will be created for you to write to.
-     * @param numUploadThreads the number of threads that will upload parts as they are produced.
-     * @param queueCapacity    the capacity of the queue that holds parts yet to be uploaded.
-     * @param partSize         the minimum size of each part in MB before it gets uploaded. Minimum is 5 due to limitations of S3.
-     *                         More than 500 is not useful in most cases as this corresponds to the limit of 5 TB total for any upload.
+     * @return this {@code StreamTransferManager} for chaining.
+     * @throws IllegalArgumentException if the argument is less than 1.
+     * @throws IllegalStateException    if {@link StreamTransferManager#getMultiPartOutputStreams} has already
+     *                                  been called, initiating the upload.
      */
+    public StreamTransferManager numStreams(int numStreams) {
+        ensureCanSet();
+        if (numStreams < 1) {
+            throw new IllegalArgumentException("There must be at least one stream");
+        }
+        this.numStreams = numStreams;
+        return this;
+    }
+
+    /**
+     * Sets the number of threads that will be created to upload the data in parallel to S3.
+     * <p>
+     * By default this is 1, increase it if uploading is a speed bottleneck and you have network
+     * bandwidth to spare.
+     * <p>
+     * Each thread may hold up to {@link StreamTransferManager#partSize(long)}
+     * in memory at a time.
+     *
+     * @return this {@code StreamTransferManager} for chaining.
+     * @throws IllegalArgumentException if the argument is less than 1.
+     * @throws IllegalStateException    if {@link StreamTransferManager#getMultiPartOutputStreams} has already
+     *                                  been called, initiating the upload.
+     */
+    public StreamTransferManager numUploadThreads(int numUploadThreads) {
+        ensureCanSet();
+        if (numUploadThreads < 1) {
+            throw new IllegalArgumentException("There must be at least one upload thread");
+        }
+        this.numUploadThreads = numUploadThreads;
+        return this;
+    }
+
+    /**
+     * Sets the capacity of the queue where completed parts from the output streams will sit
+     * waiting to be taken by the upload threads.
+     * <p>
+     * By default this is 1, increase it if you want to help your threads which write
+     * to the streams be consistently busy instead of blocking waiting for upload threads.
+     * <p>
+     * Each part sitting in the queue will hold {@link StreamTransferManager#partSize(long)} bytes
+     * in memory at a time.
+     *
+     * @return this {@code StreamTransferManager} for chaining.
+     * @throws IllegalArgumentException if the argument is less than 1.
+     * @throws IllegalStateException    if {@link StreamTransferManager#getMultiPartOutputStreams} has already
+     *                                  been called, initiating the upload.
+     */
+    public StreamTransferManager queueCapacity(int queueCapacity) {
+        ensureCanSet();
+        if (queueCapacity < 1) {
+            throw new IllegalArgumentException("The queue capacity must be at least 1");
+        }
+        this.queueCapacity = queueCapacity;
+        return this;
+    }
+
+    /**
+     * Sets the size in MB of the parts to be uploaded to S3.
+     * <p>
+     * By default this is 5, which is the minimum that AWS allows. You may need to increase
+     * it if you are uploading very large files or writing to many output streams.
+     * <p>
+     * AWS allows up to 10,000 parts to be uploaded for a single object, and each part must be
+     * identified by a unique number from 1 to 10,000. These part numbers are allocated evenly
+     * by the manager to each output stream. Therefore the maximum amount of data that can be
+     * written to a stream is {@code 10000/numStreams * partSize}. If you try to write more,
+     * an {@code IndexOutOfBoundsException} will be thrown.
+     * The total object size can be at most 5 TB, so if you're using just one stream,
+     * there is no reason to set this higher than 525. If you're using more streams, you may want
+     * a higher value in case some streams get more data than others.
+     * <p>
+     * Increasing this value will of course increase memory usage.
+     *
+     * @return this {@code StreamTransferManager} for chaining.
+     * @throws IllegalArgumentException if the argument is less than 5.
+     * @throws IllegalArgumentException if the resulting part size in bytes cannot fit in a 32 bit int.
+     * @throws IllegalStateException    if {@link StreamTransferManager#getMultiPartOutputStreams} has already
+     *                                  been called, initiating the upload.
+     */
+    // partSize is a long here in case of a mistake on the user's part before calling this method.
+    public StreamTransferManager partSize(long partSize) {
+        ensureCanSet();
+        partSize *= MB;
+        if (partSize < MultiPartOutputStream.S3_MIN_PART_SIZE) {
+            throw new IllegalArgumentException(String.format(
+                    "The given part size (%d) is less than 5 MB.", partSize));
+        }
+        if (partSize > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(String.format(
+                    "The given part size (%d) is too large as it does not fit in a 32 bit int", partSize));
+        }
+        this.partSize = (int) partSize;
+        return this;
+    }
+
+    private void ensureCanSet() {
+        if (queue != null) {
+            abort();
+            throw new IllegalStateException("Setters cannot be called after getMultiPartOutputStreams");
+        }
+
+    }
+
+    /**
+     * Deprecated constructor kept for backward compatibility. Use {@link StreamTransferManager#StreamTransferManager(String, String, AmazonS3)} and then chain the desired setters.
+     */
+    @Deprecated
     public StreamTransferManager(String bucketName,
                                  String putKey,
                                  AmazonS3 s3Client,
@@ -137,23 +264,25 @@ public class StreamTransferManager {
                                  int numUploadThreads,
                                  int queueCapacity,
                                  int partSize) {
-        if (numStreams <= 0) {
-            throw new IllegalArgumentException("There must be at least one stream");
-        }
-        if (numUploadThreads <= 0) {
-            throw new IllegalArgumentException("There must be at least one upload thread");
-        }
-        partSize *= 1024 * 1024;
-        if (partSize < MultiPartOutputStream.S3_MIN_PART_SIZE) {
-            throw new IllegalArgumentException(String.format(
-                    "The given part size (%d) is less than 5 MB.", partSize));
+        this(bucketName, putKey, s3Client);
+        numStreams(numStreams);
+        numUploadThreads(numUploadThreads);
+        queueCapacity(queueCapacity);
+        partSize(partSize);
+    }
+
+    /**
+     * Get the list of output streams to write to.
+     * <p>
+     * The first call to this method initiates the multipart upload.
+     * All setter methods must be called before this.
+     */
+    public List<MultiPartOutputStream> getMultiPartOutputStreams() {
+        if (multiPartOutputStreams != null) {
+            return multiPartOutputStreams;
         }
 
-        this.bucketName = bucketName;
-        this.putKey = putKey;
-        this.s3Client = s3Client;
         queue = new ArrayBlockingQueue<StreamPart>(queueCapacity);
-
         log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
         InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucketName, putKey);
         customiseInitiateRequest(initRequest);
@@ -184,9 +313,6 @@ public class StreamTransferManager {
             throw new RuntimeException("Unexpected error occurred while setting up streams and threads for upload: this likely indicates a bug in this class.", e);
         }
 
-    }
-
-    public List<MultiPartOutputStream> getMultiPartOutputStreams() {
         return multiPartOutputStreams;
     }
 
@@ -240,12 +366,16 @@ public class StreamTransferManager {
             }
             isAborting = true;
         }
-        executorServiceResultsHandler.abort();
-        log.debug("{}: Aborting", this);
-        AbortMultipartUploadRequest abortMultipartUploadRequest = new AbortMultipartUploadRequest(
-                bucketName, putKey, uploadId);
-        s3Client.abortMultipartUpload(abortMultipartUploadRequest);
-        log.info("{}: Aborted", this);
+        if (executorServiceResultsHandler != null) {
+            executorServiceResultsHandler.abort();
+        }
+        if (uploadId != null) {
+            log.debug("{}: Aborting", this);
+            AbortMultipartUploadRequest abortMultipartUploadRequest = new AbortMultipartUploadRequest(
+                    bucketName, putKey, uploadId);
+            s3Client.abortMultipartUpload(abortMultipartUploadRequest);
+            log.info("{}: Aborted", this);
+        }
     }
 
     private class UploadTask implements Callable<Void> {

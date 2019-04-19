@@ -149,11 +149,7 @@ public class StreamTransferManagerTest {
         client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
 
         int numStreams = 2;
-        int numUploadThreads = 2;
-        int queueCapacity = 2;
-        int partSize = 5;
-        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client, numStreams,
-                numUploadThreads, queueCapacity, partSize) {
+        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client) {
 
             @Override
             public void customiseUploadPartRequest(UploadPartRequest request) {
@@ -165,7 +161,11 @@ public class StreamTransferManagerTest {
                 metadata.setContentType("application/unknown");
                 request.setObjectMetadata(metadata);
             }
-        };
+        }.numStreams(numStreams)
+                .numUploadThreads(2)
+                .queueCapacity(2)
+                .partSize(10);
+
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
         ExecutorService pool = Executors.newFixedThreadPool(numStreams);
