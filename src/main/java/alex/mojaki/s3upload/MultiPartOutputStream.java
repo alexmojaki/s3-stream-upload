@@ -100,6 +100,9 @@ public class MultiPartOutputStream extends OutputStream {
         on order in the StreamTransferManager and the way it handles these small parts, referred to as 'leftover'.
         Such parts are only produced when the user closes a stream that never had more than 5 MB written to it.
          */
+        if (currentStream == null) {
+            throw new IllegalStateException("The stream is closed and cannot be written to.");
+        }
         if (currentStream.size() > partSize + S3_MIN_PART_SIZE) {
             ConvertibleOutputStream newStream = currentStream.split(
                     currentStream.size() - S3_MIN_PART_SIZE,
