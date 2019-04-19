@@ -17,6 +17,13 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 <dependency>
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>1.0.2</version>
+    <version>2.0.0</version>
 </dependency>
 ```
+
+## Changelog
+
+### 2.0.0
+
+- The `checkSize()` method is now private as the user no longer needs to call it. You can remove all calls to it.
+- The constructor from version 1 is now deprecated. Instead you should call the 3 parameter constructor which has the essentials, and optionally chain the desired builder style setters to configure.
