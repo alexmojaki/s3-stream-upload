@@ -4,12 +4,15 @@ import alex.mojaki.s3upload.MultiPartOutputStream;
 import alex.mojaki.s3upload.StreamTransferManager;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.SDKGlobalConfiguration;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.S3ClientOptions;
+import com.amazonaws.client.builder.AwsClientBuilder;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.UploadPartRequest;
+import com.amazonaws.util.AwsHostNameUtils;
 import com.amazonaws.util.IOUtils;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -144,10 +147,13 @@ public class StreamTransferManagerTest {
 
     @Test
     public void testTransferManager() throws Exception {
-        AmazonS3Client client = new AmazonS3Client(awsCreds,
-                new ClientConfiguration().withSignerOverride("S3SignerType"));
-        client.setEndpoint(s3Endpoint.toString());
-        client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
+        AmazonS3 client = AmazonS3ClientBuilder.standard()
+                .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
+                .withClientConfiguration(new ClientConfiguration().withSignerOverride("S3SignerType"))
+                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(s3Endpoint.toString(),
+                        AwsHostNameUtils.parseRegion(s3Endpoint.toString(), null)))
+                .enablePathStyleAccess()
+                .build();
 
         int numStreams = 2;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client) {
