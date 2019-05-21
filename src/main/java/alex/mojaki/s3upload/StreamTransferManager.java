@@ -283,6 +283,7 @@ public class StreamTransferManager {
         InitiateMultipartUploadResult initResponse = s3Client.initiateMultipartUpload(initRequest);
         uploadId = initResponse.getUploadId();
         log.info("Initiated multipart upload to {}/{} with full ID {}", bucketName, putKey, uploadId);
+        boolean success = false;
         try {
             partETags = new ArrayList<PartETag>();
             multiPartOutputStreams = new ArrayList<MultiPartOutputStream>();
@@ -302,9 +303,11 @@ public class StreamTransferManager {
                 executorServiceResultsHandler.submit(new UploadTask());
             }
             executorServiceResultsHandler.finishedSubmitting();
-        } catch (Throwable e) {
-            abort(e);
-            throw new RuntimeException("Unexpected error occurred while setting up streams and threads for upload: this likely indicates a bug in this class.", e);
+            success = true;
+        } finally {
+            if (!success) {
+                abort();
+            }
         }
 
         return multiPartOutputStreams;
