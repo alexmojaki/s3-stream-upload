@@ -302,7 +302,7 @@ public class StreamTransferManager {
                 executorServiceResultsHandler.submit(new UploadTask());
             }
             executorServiceResultsHandler.finishedSubmitting();
-        } catch (Throwable e) {
+        } catch (Exception e) {
             abort(e);
             throw new RuntimeException("Unexpected error occurred while setting up streams and threads for upload: this likely indicates a bug in this class.", e);
         }
