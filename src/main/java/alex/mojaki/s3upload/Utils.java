@@ -12,8 +12,10 @@ class Utils {
     /**
      * Lets you avoid dealing with {@code InterruptedException} as a checked exception and ensures
      * that the interrupted status of the thread is not lost.
+     * Write {@code throw runtimeInterruptedException(e)} to make it clear to the
+     * compiler and readers that the code stops here.
      */
-    public static void throwRuntimeInterruptedException(InterruptedException e) {
+    public static RuntimeException runtimeInterruptedException(InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new RuntimeException(e);
     }

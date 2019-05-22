@@ -127,7 +127,7 @@ public class MultiPartOutputStream extends OutputStream {
         try {
             queue.put(streamPart);
         } catch (InterruptedException e) {
-            Utils.throwRuntimeInterruptedException(e);
+            throw Utils.runtimeInterruptedException(e);
         }
     }
 
@@ -166,7 +166,7 @@ public class MultiPartOutputStream extends OutputStream {
             queue.put(StreamPart.POISON);
         } catch (InterruptedException e) {
             log.error("Interrupted while closing {}", this);
-            Utils.throwRuntimeInterruptedException(e);
+            throw Utils.runtimeInterruptedException(e);
         }
         currentStream = null;
     }

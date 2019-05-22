@@ -303,8 +303,7 @@ public class StreamTransferManager {
             }
             executorServiceResultsHandler.finishedSubmitting();
         } catch (Throwable e) {
-            abort(e);
-            throw new RuntimeException("Unexpected error occurred while setting up streams and threads for upload: this likely indicates a bug in this class.", e);
+            throw abort(e);
         }
 
         return multiPartOutputStreams;
@@ -337,17 +336,29 @@ public class StreamTransferManager {
             s3Client.completeMultipartUpload(completeRequest);
             log.info("{}: Completed", this);
         } catch (Throwable e) {
-            abort(e);
-            throw new RuntimeException(e);
+            throw abort(e);
         }
     }
 
     /**
-     * Aborts the upload and logs a message including the stack trace of the given throwable.
+     * Aborts the upload and rethrows the argument, wrapped in a RuntimeException if necessary.
+     * Write {@code throw abort(e)} to make it clear to the compiler and readers that the code
+     * stops here.
      */
-    public void abort(Throwable throwable) {
-        log.error("{}: Abort called due to error:", this, throwable);
+    public RuntimeException abort(Throwable t) {
         abort();
+        if (t instanceof Error) {
+            throw (Error) t;
+
+        } else if (t instanceof RuntimeException) {
+            throw (RuntimeException) t;
+
+        } else if (t instanceof InterruptedException) {
+            throw Utils.runtimeInterruptedException((InterruptedException) t);
+
+        } else {
+            throw new RuntimeException(t);
+        }
     }
 
     /**
@@ -432,8 +443,7 @@ public class StreamTransferManager {
                     }
                 }
             } catch (Throwable t) {
-                abort(t);
-                throw new RuntimeException(t);
+                throw abort(t);
             }
 
             return null;
