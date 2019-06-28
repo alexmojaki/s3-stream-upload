@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 
@@ -107,7 +108,7 @@ public class StreamTransferManager {
     protected int numUploadThreads = 1;
     protected int queueCapacity = 1;
     protected int partSize = 5 * MB;
-    private List<PartETag> partETags;
+    private final List<PartETag> partETags = Collections.synchronizedList(new ArrayList<PartETag>());
     private List<MultiPartOutputStream> multiPartOutputStreams;
     private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
     private BlockingQueue<StreamPart> queue;
@@ -284,7 +285,6 @@ public class StreamTransferManager {
         uploadId = initResponse.getUploadId();
         log.info("Initiated multipart upload to {}/{} with full ID {}", bucketName, putKey, uploadId);
         try {
-            partETags = new ArrayList<PartETag>();
             multiPartOutputStreams = new ArrayList<MultiPartOutputStream>();
             ExecutorService threadPool = Executors.newFixedThreadPool(numUploadThreads);
 
