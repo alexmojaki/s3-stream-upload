@@ -5,6 +5,7 @@ import com.amazonaws.services.s3.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -326,14 +327,24 @@ public class StreamTransferManager {
                 log.debug("{}: Leftover uploaded", this);
             }
             log.debug("{}: Completing", this);
-            CompleteMultipartUploadRequest completeRequest = new
-                    CompleteMultipartUploadRequest(
-                    bucketName,
-                    putKey,
-                    uploadId,
-                    partETags);
-            customiseCompleteRequest(completeRequest);
-            s3Client.completeMultipartUpload(completeRequest);
+            if (partETags.isEmpty()) {
+                log.debug("{}: Uploading empty stream", this);
+                ByteArrayInputStream emptyStream = new ByteArrayInputStream(new byte[]{});
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentLength(0);
+                PutObjectRequest request = new PutObjectRequest(bucketName, putKey, emptyStream, metadata);
+                customisePutEmptyObjectRequest(request);
+                s3Client.putObject(request);
+            } else {
+                CompleteMultipartUploadRequest completeRequest = new
+                        CompleteMultipartUploadRequest(
+                        bucketName,
+                        putKey,
+                        uploadId,
+                        partETags);
+                customiseCompleteRequest(completeRequest);
+                s3Client.completeMultipartUpload(completeRequest);
+            }
             log.info("{}: Completed", this);
         } catch (Throwable e) {
             throw abort(e);
@@ -485,6 +496,10 @@ public class StreamTransferManager {
 
     @SuppressWarnings("unused")
     public void customiseCompleteRequest(CompleteMultipartUploadRequest request) {
+    }
+
+    @SuppressWarnings("unused")
+    public void customisePutEmptyObjectRequest(PutObjectRequest request) {
     }
 
 }

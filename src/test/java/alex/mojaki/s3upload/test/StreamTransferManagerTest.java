@@ -147,6 +147,11 @@ public class StreamTransferManagerTest {
 
     @Test
     public void testTransferManager() throws Exception {
+        testTransferManager(1000000);
+        testTransferManager(0);
+    }
+
+    private void testTransferManager(final int numLines) throws Exception {
         AmazonS3 client = AmazonS3ClientBuilder.standard()
                 .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
                 .withClientConfiguration(new ClientConfiguration().withSignerOverride("S3SignerType"))
@@ -184,7 +189,7 @@ public class StreamTransferManagerTest {
                 @Override
                 public void run() {
                     MultiPartOutputStream outputStream = streams.get(streamIndex);
-                    for (int lineNum = 0; lineNum < 1000000; lineNum++) {
+                    for (int lineNum = 0; lineNum < numLines; lineNum++) {
                         String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
                         outputStream.write(line.getBytes());
                         builder.append(line);
