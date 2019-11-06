@@ -11,17 +11,21 @@ The entrypoint is the class `StreamTransferManager`. Read more in the
 [javadoc](http://alexmojaki.github.io/s3-stream-upload/javadoc/apidocs/alex/mojaki/s3upload/StreamTransferManager.html),
 including a usage example.
 
-This is available from [maven central](https://mvnrepository.com/artifact/com.github.alexmojaki/s3-stream-upload). You can include it as a dependency in `pom.xml`:
-
-```
-<dependency>
-    <groupId>com.github.alexmojaki</groupId>
-    <artifactId>s3-stream-upload</artifactId>
-    <version>2.0.0</version>
-</dependency>
-```
+This is available from [maven central](https://mvnrepository.com/artifact/com.github.alexmojaki/s3-stream-upload/latest).
 
 ## Changelog
+
+### 2.0.3
+
+- Bump aws-java-sdk dependency version
+
+### 2.0.2
+
+- Avoid race condition in big uploads causing some parts to be missing from final completed upload. 
+
+### 2.0.1
+
+- Allow thrown `Error`s (e.g. OOM) to bubble up unchanged.
 
 ### 2.0.0
 
