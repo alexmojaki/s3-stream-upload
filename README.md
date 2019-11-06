@@ -15,9 +15,14 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 
 ## Changelog
 
+### 2.1.0
+
+- Support uploading empty objects. In this case the user may want to override `customisePutEmptyObjectRequest`.
+- Bump `aws-java-sdk` and `slf4j-api` dependency versions.
+
 ### 2.0.3
 
-- Bump aws-java-sdk dependency version
+- Bump `aws-java-sdk` dependency version
 
 ### 2.0.2
 
