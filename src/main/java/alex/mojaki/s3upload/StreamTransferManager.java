@@ -84,7 +84,7 @@ import static com.amazonaws.services.s3.internal.Constants.MB;
  * While performing the multipart upload this class will create instances of {@link InitiateMultipartUploadRequest},
  * {@link UploadPartRequest}, and {@link CompleteMultipartUploadRequest}, fill in the essential details, and send them
  * off. If you need to add additional details then override the appropriate {@code customise*Request} methods and
- * set the required properties within.
+ * set the required properties within. Note that if no data is written (i.e. the object body is empty) then a normal (not multipart) upload will be performed and {@code customisePutEmptyObjectRequest} will be called instead.
  * <p>
  * This class does not perform retries when uploading. If an exception is thrown at any stage the upload will be aborted and the
  * exception rethrown, wrapped in a {@code RuntimeException}.
