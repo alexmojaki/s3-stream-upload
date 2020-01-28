@@ -2,18 +2,6 @@ package alex.mojaki.s3upload.test;
 
 import alex.mojaki.s3upload.MultiPartOutputStream;
 import alex.mojaki.s3upload.StreamTransferManager;
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.SDKGlobalConfiguration;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.UploadPartRequest;
-import com.amazonaws.util.AwsHostNameUtils;
-import com.amazonaws.util.IOUtils;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
@@ -28,6 +16,16 @@ import org.jclouds.blobstore.BlobStoreContext;
 import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
 import org.junit.*;
 import org.junit.rules.ExpectedException;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.signer.AwsS3V4Signer;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.utils.AttributeMap;
+import software.amazon.awssdk.utils.IoUtils;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -39,16 +37,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import static software.amazon.awssdk.http.SdkHttpConfigurationOption.TRUST_ALL_CERTIFICATES;
+
 /**
  * A WIP test using s3proxy to avoid requiring actually connecting to a real S3 bucket.
  */
 public class StreamTransferManagerTest {
-
-    static {
-        System.setProperty(
-                SDKGlobalConfiguration.DISABLE_CERT_CHECKING_SYSTEM_PROPERTY,
-                "true");
-    }
 
     @Rule
     public ExpectedException thrown = ExpectedException.none();
@@ -58,17 +52,14 @@ public class StreamTransferManagerTest {
     private BlobStoreContext context;
     private String containerName;
     private String key;
-    private BasicAWSCredentials awsCreds;
+    private AwsBasicCredentials awsCreds;
 
     @Before
     public void setUp() throws Exception {
         Properties s3ProxyProperties = new Properties();
-        InputStream is = Resources.asByteSource(Resources.getResource(
-                "s3proxy.conf")).openStream();
-        try {
+        try (InputStream is = Resources.asByteSource(Resources.getResource(
+                "s3proxy.conf")).openStream()) {
             s3ProxyProperties.load(is);
-        } finally {
-            is.close();
         }
 
         String provider = s3ProxyProperties.getProperty(
@@ -83,7 +74,8 @@ public class StreamTransferManagerTest {
                 S3ProxyConstants.PROPERTY_IDENTITY);
         String s3Credential = s3ProxyProperties.getProperty(
                 S3ProxyConstants.PROPERTY_CREDENTIAL);
-        awsCreds = new BasicAWSCredentials(s3Identity, s3Credential);
+
+        awsCreds = AwsBasicCredentials.create(s3Identity, s3Credential);
         s3Endpoint = new URI(s3ProxyProperties.getProperty(
                 S3ProxyConstants.PROPERTY_ENDPOINT));
         String keyStorePath = s3ProxyProperties.getProperty(
@@ -110,8 +102,7 @@ public class StreamTransferManagerTest {
         S3Proxy.Builder s3ProxyBuilder = S3Proxy.builder()
                 .blobStore(blobStore)
                 .endpoint(s3Endpoint);
-        //noinspection ConstantConditions
-        if (s3Identity != null || s3Credential != null) {
+        if (s3Identity != null && s3Credential != null) {
             s3ProxyBuilder.awsAuthentication(s3Identity, s3Credential);
         }
         if (keyStorePath != null || keyStorePassword != null) {
@@ -152,52 +143,53 @@ public class StreamTransferManagerTest {
     }
 
     private void testTransferManager(final int numLines) throws Exception {
-        AmazonS3 client = AmazonS3ClientBuilder.standard()
-                .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
-                .withClientConfiguration(new ClientConfiguration().withSignerOverride("S3SignerType"))
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(s3Endpoint.toString(),
-                        AwsHostNameUtils.parseRegion(s3Endpoint.toString(), null)))
-                .enablePathStyleAccess()
+        S3Client client = S3Client.builder()
+                .credentialsProvider(StaticCredentialsProvider.create(awsCreds))
+                .endpointOverride(s3Endpoint)
+                .overrideConfiguration(b -> b.putAdvancedOption(
+                        SdkAdvancedClientOption.SIGNER, AwsS3V4Signer.create()))
+                .httpClient(ApacheHttpClient.builder().buildWithDefaults(
+                        AttributeMap.builder()
+                                .put(TRUST_ALL_CERTIFICATES, Boolean.TRUE)
+                                .build()
+                ))
+//                .enablePathStyleAccess()
                 .build();
 
         int numStreams = 2;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client) {
 
-            @Override
-            public void customiseUploadPartRequest(UploadPartRequest request) {
-                /*
-                Workaround from https://github.com/andrewgaul/s3proxy/commit/50a302436271ec46ce81a415b4208b9e14fcaca4
-                to deal with https://github.com/andrewgaul/s3proxy/issues/80
-                 */
-                ObjectMetadata metadata = new ObjectMetadata();
-                metadata.setContentType("application/unknown");
-                request.setObjectMetadata(metadata);
-            }
+//            @Override
+//            public void customiseUploadPartRequest(UploadPartRequest request) {
+//                /*
+//                Workaround from https://github.com/andrewgaul/s3proxy/commit/50a302436271ec46ce81a415b4208b9e14fcaca4
+//                to deal with https://github.com/andrewgaul/s3proxy/issues/80
+//                 */
+//                ObjectMetadata metadata = new ObjectMetadata();
+//                metadata.setContentType("application/unknown");
+//                request.setObjectMetadata(metadata);
+//            }
         }.numStreams(numStreams)
                 .numUploadThreads(2)
                 .queueCapacity(2)
                 .partSize(10);
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
-        List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
+        List<StringBuilder> builders = new ArrayList<>(numStreams);
         ExecutorService pool = Executors.newFixedThreadPool(numStreams);
         for (int i = 0; i < numStreams; i++) {
             final int streamIndex = i;
             final StringBuilder builder = new StringBuilder();
             builders.add(builder);
-            Runnable task = new Runnable() {
-                @Override
-                public void run() {
-                    MultiPartOutputStream outputStream = streams.get(streamIndex);
-                    for (int lineNum = 0; lineNum < numLines; lineNum++) {
-                        String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
-                        outputStream.write(line.getBytes());
-                        builder.append(line);
-                    }
-                    outputStream.close();
+            pool.submit(() -> {
+                MultiPartOutputStream outputStream = streams.get(streamIndex);
+                for (int lineNum = 0; lineNum < numLines; lineNum++) {
+                    String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
+                    outputStream.write(line.getBytes());
+                    builder.append(line);
                 }
-            };
-            pool.submit(task);
+                outputStream.close();
+            });
         }
         pool.shutdown();
         pool.awaitTermination(5, TimeUnit.SECONDS);
@@ -209,9 +201,9 @@ public class StreamTransferManagerTest {
 
         String expectedResult = builders.get(0).toString();
 
-        S3ObjectInputStream objectContent = client.getObject(containerName, key).getObjectContent();
-        String result = IOUtils.toString(objectContent);
-        IOUtils.closeQuietly(objectContent, null);
+        ResponseInputStream<GetObjectResponse> responseInputStream = client.getObject(b -> b.bucket(containerName).key(key));
+        String result = IoUtils.toUtf8String(responseInputStream);
+        IoUtils.closeQuietly(responseInputStream, null);
 
         Assert.assertEquals(expectedResult, result);
     }

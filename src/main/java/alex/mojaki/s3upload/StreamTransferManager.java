@@ -1,17 +1,16 @@
 package alex.mojaki.s3upload;
 
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
 
-import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 
-import static com.amazonaws.services.s3.internal.Constants.MB;
 
 // @formatter:off
 /**
@@ -81,7 +80,7 @@ import static com.amazonaws.services.s3.internal.Constants.MB;
  * on what this class can accomplish. If order of data is important to you, then either use only one stream or ensure
  * that you write at least 5 MB to every stream.
  * <p>
- * While performing the multipart upload this class will create instances of {@link InitiateMultipartUploadRequest},
+ * While performing the multipart upload this class will create instances of {@link CreateMultipartUploadRequest},
  * {@link UploadPartRequest}, and {@link CompleteMultipartUploadRequest}, fill in the essential details, and send them
  * off. If you need to add additional details then override the appropriate {@code customise*Request} methods and
  * set the required properties within. Note that if no data is written (i.e. the object body is empty) then a normal (not multipart) upload will be performed and {@code customisePutEmptyObjectRequest} will be called instead.
@@ -101,15 +100,17 @@ public class StreamTransferManager {
 
     private static final Logger log = LoggerFactory.getLogger(StreamTransferManager.class);
 
+    public static final int MB = 1024 * 1024;
+
     protected final String bucketName;
     protected final String putKey;
-    protected final AmazonS3 s3Client;
+    protected final S3Client s3Client;
     protected String uploadId;
     protected int numStreams = 1;
     protected int numUploadThreads = 1;
     protected int queueCapacity = 1;
     protected int partSize = 5 * MB;
-    private final List<PartETag> partETags = Collections.synchronizedList(new ArrayList<PartETag>());
+    private final List<CompletedPart> partETags = Collections.synchronizedList(new ArrayList<>());
     private List<MultiPartOutputStream> multiPartOutputStreams;
     private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
     private BlockingQueue<StreamPart> queue;
@@ -121,7 +122,7 @@ public class StreamTransferManager {
 
     public StreamTransferManager(String bucketName,
                                  String putKey,
-                                 AmazonS3 s3Client) {
+                                 S3Client s3Client) {
         this.bucketName = bucketName;
         this.putKey = putKey;
         this.s3Client = s3Client;
@@ -250,12 +251,12 @@ public class StreamTransferManager {
     }
 
     /**
-     * Deprecated constructor kept for backward compatibility. Use {@link StreamTransferManager#StreamTransferManager(String, String, AmazonS3)} and then chain the desired setters.
+     * Deprecated constructor kept for backward compatibility. Use {@link StreamTransferManager#StreamTransferManager(String, String, S3Client)} and then chain the desired setters.
      */
     @Deprecated
     public StreamTransferManager(String bucketName,
                                  String putKey,
-                                 AmazonS3 s3Client,
+                                 S3Client s3Client,
                                  int numStreams,
                                  int numUploadThreads,
                                  int queueCapacity,
@@ -278,15 +279,15 @@ public class StreamTransferManager {
             return multiPartOutputStreams;
         }
 
-        queue = new ArrayBlockingQueue<StreamPart>(queueCapacity);
+        queue = new ArrayBlockingQueue<>(queueCapacity);
         log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
-        InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucketName, putKey);
-        customiseInitiateRequest(initRequest);
-        InitiateMultipartUploadResult initResponse = s3Client.initiateMultipartUpload(initRequest);
-        uploadId = initResponse.getUploadId();
+        CreateMultipartUploadRequest initRequest = CreateMultipartUploadRequest.builder()
+                .bucket(bucketName).key(putKey).applyMutation(this::customiseInitiateRequest).build();
+        CreateMultipartUploadResponse initResponse = s3Client.createMultipartUpload(initRequest);
+        uploadId = initResponse.uploadId();
         log.info("Initiated multipart upload to {}/{} with full ID {}", bucketName, putKey, uploadId);
         try {
-            multiPartOutputStreams = new ArrayList<MultiPartOutputStream>();
+            multiPartOutputStreams = new ArrayList<>();
             ExecutorService threadPool = Executors.newFixedThreadPool(numUploadThreads);
 
             int partNumberStart = 1;
@@ -298,7 +299,7 @@ public class StreamTransferManager {
                 multiPartOutputStreams.add(multiPartOutputStream);
             }
 
-            executorServiceResultsHandler = new ExecutorServiceResultsHandler<Void>(threadPool);
+            executorServiceResultsHandler = new ExecutorServiceResultsHandler<>(threadPool);
             for (int i = 0; i < numUploadThreads; i++) {
                 executorServiceResultsHandler.submit(new UploadTask());
             }
@@ -329,20 +330,21 @@ public class StreamTransferManager {
             log.debug("{}: Completing", this);
             if (partETags.isEmpty()) {
                 log.debug("{}: Uploading empty stream", this);
-                ByteArrayInputStream emptyStream = new ByteArrayInputStream(new byte[]{});
-                ObjectMetadata metadata = new ObjectMetadata();
-                metadata.setContentLength(0);
-                PutObjectRequest request = new PutObjectRequest(bucketName, putKey, emptyStream, metadata);
-                customisePutEmptyObjectRequest(request);
-                s3Client.putObject(request);
+                PutObjectRequest request = PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(putKey)
+                        .contentLength(0L)
+                        .applyMutation(this::customisePutEmptyObjectRequest)
+                        .build();
+                s3Client.putObject(request, RequestBody.empty());
             } else {
-                CompleteMultipartUploadRequest completeRequest = new
-                        CompleteMultipartUploadRequest(
-                        bucketName,
-                        putKey,
-                        uploadId,
-                        partETags);
-                customiseCompleteRequest(completeRequest);
+                CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
+                        .bucket(bucketName)
+                        .key(putKey)
+                        .uploadId(uploadId)
+                        .multipartUpload(b -> b.parts(partETags))
+                        .applyMutation(this::customiseCompleteRequest)
+                        .build();
                 s3Client.completeMultipartUpload(completeRequest);
             }
             log.info("{}: Completed", this);
@@ -387,8 +389,8 @@ public class StreamTransferManager {
         }
         if (uploadId != null) {
             log.debug("{}: Aborting", this);
-            AbortMultipartUploadRequest abortMultipartUploadRequest = new AbortMultipartUploadRequest(
-                    bucketName, putKey, uploadId);
+            AbortMultipartUploadRequest abortMultipartUploadRequest = AbortMultipartUploadRequest.builder()
+                    .bucket(bucketName).key(putKey).uploadId(uploadId).build();
             s3Client.abortMultipartUpload(abortMultipartUploadRequest);
             log.info("{}: Aborted", this);
         }
@@ -465,15 +467,19 @@ public class StreamTransferManager {
     private void uploadStreamPart(StreamPart part) {
         log.debug("{}: Uploading {}", this, part);
 
-        UploadPartRequest uploadRequest = new UploadPartRequest()
-                .withBucketName(bucketName).withKey(putKey)
-                .withUploadId(uploadId).withPartNumber(part.getPartNumber())
-                .withInputStream(part.getInputStream())
-                .withPartSize(part.size());
-        customiseUploadPartRequest(uploadRequest);
+        UploadPartRequest uploadRequest = UploadPartRequest.builder()
+                .bucket(bucketName)
+                .key(putKey)
+                .uploadId(uploadId)
+                .partNumber(part.getPartNumber())
+                .applyMutation(this::customiseUploadPartRequest)
+                .build();
 
-        UploadPartResult uploadPartResult = s3Client.uploadPart(uploadRequest);
-        PartETag partETag = uploadPartResult.getPartETag();
+        UploadPartResponse uploadPartResult = s3Client.uploadPart(
+                uploadRequest,
+                RequestBody.fromInputStream(part.getInputStream(), part.size()));
+        CompletedPart partETag = CompletedPart.builder()
+                .partNumber(part.getPartNumber()).eTag(uploadPartResult.eTag()).build();
         partETags.add(partETag);
         log.info("{}: Finished uploading {}", this, part);
     }
@@ -487,19 +493,19 @@ public class StreamTransferManager {
     // These methods are intended to be overridden for more specific interactions with the AWS API.
 
     @SuppressWarnings("unused")
-    public void customiseInitiateRequest(InitiateMultipartUploadRequest request) {
+    public void customiseInitiateRequest(CreateMultipartUploadRequest.Builder requestBuilder) {
     }
 
     @SuppressWarnings("unused")
-    public void customiseUploadPartRequest(UploadPartRequest request) {
+    public void customiseUploadPartRequest(UploadPartRequest.Builder requestBuilder) {
     }
 
     @SuppressWarnings("unused")
-    public void customiseCompleteRequest(CompleteMultipartUploadRequest request) {
+    public void customiseCompleteRequest(CompleteMultipartUploadRequest.Builder requestBuilder) {
     }
 
     @SuppressWarnings("unused")
-    public void customisePutEmptyObjectRequest(PutObjectRequest request) {
+    public void customisePutEmptyObjectRequest(PutObjectRequest.Builder requestBuilder) {
     }
 
 }
