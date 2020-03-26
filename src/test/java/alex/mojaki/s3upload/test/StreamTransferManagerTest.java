@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
 import com.google.inject.Module;
 import org.eclipse.jetty.util.component.AbstractLifeCycle;
+import org.gaul.s3proxy.AuthenticationType;
 import org.gaul.s3proxy.S3Proxy;
 import org.gaul.s3proxy.S3ProxyConstants;
 import org.jclouds.Constants;
@@ -79,6 +80,8 @@ public class StreamTransferManagerTest {
                 Constants.PROPERTY_CREDENTIAL);
         String endpoint = s3ProxyProperties.getProperty(
                 Constants.PROPERTY_ENDPOINT);
+        AuthenticationType s3Authorization = AuthenticationType.valueOf(s3ProxyProperties.getProperty(
+                S3ProxyConstants.PROPERTY_AUTHORIZATION));
         String s3Identity = s3ProxyProperties.getProperty(
                 S3ProxyConstants.PROPERTY_IDENTITY);
         String s3Credential = s3ProxyProperties.getProperty(
@@ -112,7 +115,7 @@ public class StreamTransferManagerTest {
                 .endpoint(s3Endpoint);
         //noinspection ConstantConditions
         if (s3Identity != null || s3Credential != null) {
-            s3ProxyBuilder.awsAuthentication(s3Identity, s3Credential);
+            s3ProxyBuilder.awsAuthentication(s3Authorization, s3Identity, s3Credential);
         }
         if (keyStorePath != null || keyStorePassword != null) {
             s3ProxyBuilder.keyStore(
@@ -176,7 +179,8 @@ public class StreamTransferManagerTest {
         }.numStreams(numStreams)
                 .numUploadThreads(2)
                 .queueCapacity(2)
-                .partSize(10);
+                .partSize(10)
+                .checkIntegrity(true);
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
