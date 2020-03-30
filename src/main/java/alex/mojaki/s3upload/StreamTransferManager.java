@@ -368,7 +368,7 @@ public class StreamTransferManager {
                 customiseCompleteRequest(completeRequest);
                 CompleteMultipartUploadResult completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
                 if (checkIntegrity) {
-                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag(), partETags);
+                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag());
                 }
             }
             log.info("{}: Completed", this);
@@ -377,8 +377,8 @@ public class StreamTransferManager {
         }
     }
 
-    private void checkCompleteFileIntegrity(String s3ObjectETag, List<PartETag> partsETags) throws NoSuchAlgorithmException {
-        List<PartETag> parts = new ArrayList<PartETag>(partsETags);
+    private void checkCompleteFileIntegrity(String s3ObjectETag) {
+        List<PartETag> parts = new ArrayList<PartETag>(partETags);
         Collections.sort(parts, new PartNumberComparator());
         String expectedETag = computeCompleteFileETag(parts);
         if (!expectedETag.equals(s3ObjectETag)) {
