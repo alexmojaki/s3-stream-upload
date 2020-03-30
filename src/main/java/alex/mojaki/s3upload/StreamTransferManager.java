@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -260,6 +259,9 @@ public class StreamTransferManager {
      */
     public StreamTransferManager checkIntegrity(boolean checkIntegrity) {
         ensureCanSet();
+        if (checkIntegrity) {
+            Utils.md5();  // check that algorithm is available
+        }
         this.checkIntegrity = checkIntegrity;
         return this;
     }
@@ -386,12 +388,11 @@ public class StreamTransferManager {
         }
     }
 
-    private String computeCompleteFileETag(List<PartETag> parts) throws NoSuchAlgorithmException {
+    private String computeCompleteFileETag(List<PartETag> parts) {
         // When S3 combines the parts of a multipart upload into the final object, the ETag value is set to the
         // hex-encoded MD5 hash of the concatenated binary-encoded (raw bytes) MD5 hashes of each part followed by
         // "-" and the number of parts.
-        MessageDigest md = MessageDigest.getInstance("MD5");
-        md.reset();
+        MessageDigest md = Utils.md5();
         for (PartETag partETag : parts) {
             md.update(BinaryUtils.fromHex(partETag.getETag()));
         }
