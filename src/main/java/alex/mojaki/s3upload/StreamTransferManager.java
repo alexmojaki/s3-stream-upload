@@ -384,7 +384,9 @@ public class StreamTransferManager {
         Collections.sort(parts, new PartNumberComparator());
         String expectedETag = computeCompleteFileETag(parts);
         if (!expectedETag.equals(s3ObjectETag)) {
-            throw new RuntimeException(String.format("Integrity check failed. Expected ETag: %s but actual is %s", expectedETag, s3ObjectETag));
+            throw new RuntimeException(String.format(
+                    "File upload completed, but integrity check failed. Expected ETag: %s but actual is %s",
+                    expectedETag, s3ObjectETag));
         }
     }
 
