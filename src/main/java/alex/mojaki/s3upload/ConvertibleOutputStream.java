@@ -8,7 +8,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * A ByteArrayOutputStream with some useful additional functionality.
@@ -60,14 +59,9 @@ class ConvertibleOutputStream extends ByteArrayOutputStream {
     }
 
     public byte[] getMD5Digest() {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            md.reset();
-            md.update(buf, 0, count);
-            return md.digest();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Failed to compute MD5 digest.", e);
-        }
+        MessageDigest md = Utils.md5();
+        md.update(buf, 0, count);
+        return md.digest();
     }
 
 }

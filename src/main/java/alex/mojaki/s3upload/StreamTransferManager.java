@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -273,6 +272,9 @@ public class StreamTransferManager {
      */
     public StreamTransferManager checkIntegrity(boolean checkIntegrity) {
         ensureCanSet();
+        if (checkIntegrity) {
+            Utils.md5();  // check that algorithm is available
+        }
         this.checkIntegrity = checkIntegrity;
         return this;
     }
@@ -381,7 +383,7 @@ public class StreamTransferManager {
                 customiseCompleteRequest(completeRequest);
                 CompleteMultipartUploadResult completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
                 if (checkIntegrity) {
-                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag(), partETags);
+                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag());
                 }
             }
             log.info("{}: Completed", this);
@@ -393,21 +395,22 @@ public class StreamTransferManager {
         }
     }
 
-    private void checkCompleteFileIntegrity(String s3ObjectETag, List<PartETag> partsETags) throws NoSuchAlgorithmException {
-        List<PartETag> parts = new ArrayList<PartETag>(partsETags);
+    private void checkCompleteFileIntegrity(String s3ObjectETag) {
+        List<PartETag> parts = new ArrayList<PartETag>(partETags);
         Collections.sort(parts, new PartNumberComparator());
         String expectedETag = computeCompleteFileETag(parts);
         if (!expectedETag.equals(s3ObjectETag)) {
-            throw new IntegrityCheckException(String.format("Integrity check failed. Expected ETag: %s but actual is %s", expectedETag, s3ObjectETag));
+            throw new IntegrityCheckException(String.format(
+                    "File upload completed, but integrity check failed. Expected ETag: %s but actual is %s",
+                    expectedETag, s3ObjectETag));
         }
     }
 
-    private String computeCompleteFileETag(List<PartETag> parts) throws NoSuchAlgorithmException {
+    private String computeCompleteFileETag(List<PartETag> parts) {
         // When S3 combines the parts of a multipart upload into the final object, the ETag value is set to the
         // hex-encoded MD5 hash of the concatenated binary-encoded (raw bytes) MD5 hashes of each part followed by
         // "-" and the number of parts.
-        MessageDigest md = MessageDigest.getInstance("MD5");
-        md.reset();
+        MessageDigest md = Utils.md5();
         for (PartETag partETag : parts) {
             md.update(BinaryUtils.fromHex(partETag.getETag()));
         }
