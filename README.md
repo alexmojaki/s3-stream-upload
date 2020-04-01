@@ -15,6 +15,11 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 
 ## Changelog
 
+### 2.2.0
+
+- [Add `checkIntegrity()` method](https://github.com/alexmojaki/s3-stream-upload/pull/26) thanks
+to **@gkolakowski-ias**. This allows verifying the upload with MD5 hashes.
+
 ### 2.1.0
 
 - Support uploading empty objects. In this case the user may want to override `customisePutEmptyObjectRequest`.
