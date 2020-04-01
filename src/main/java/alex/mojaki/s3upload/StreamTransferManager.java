@@ -247,23 +247,27 @@ public class StreamTransferManager {
     }
 
     /**
-     * Sets whether data integrity check should be performed during upload.
+     * Sets whether a data integrity check should be performed during and after upload.
      * <p>
-     * By default integrity check is disabled.
+     * By default this is disabled.
      * <p>
-     * Essentially, data integrity check consists of two steps. First, each upload part integrity
-     * is verified. To ensure that data is not corrupted traversing the network, <b>Content-MD5</b>
-     * header is used. When the header is provided, Amazon S3 checks the object against
-     * the provided MD5 value and, if they do not match, returns an error. The header value is the
-     * base64-encoded 128-bit MD5 digest of the request body.
+     * The integrity check consists of two steps. First, each uploaded part
+     * is verified by setting the <b>Content-MD5</b>
+     * header for Amazon S3 to check against its own hash. If they don't match, the AWS SDK
+     * will throw an exception. The header value is the
+     * base64-encoded 128-bit MD5 digest of the part body.
      * <p>
      * The second step is to ensure integrity of the final object merged from the uploaded parts.
-     * This is achieved by comparing the expected ETag value with the actual returned by S3.
+     * This is achieved by comparing the expected ETag value with the actual ETag returned by S3.
      * However, the ETag value is not a MD5 hash. When S3 combines the parts of a multipart upload
      * into the final object, the ETag value is set to the hex-encoded MD5 hash of the concatenated
      * binary-encoded MD5 hashes of each part followed by "-" and the number of parts, for instance:
      * <pre>57f456164b0e5f365aaf9bb549731f32-95</pre>
-     * <b>Please note that the final check is based on undocumented behaviour of S3.</b>
+     * <b>Note that AWS doesn't document this, so their hashing algorithm might change without
+     * notice which would lead to false alarm exceptions.
+     * </b>
+     * If the ETags don't match, an {@link IntegrityCheckException} will be thrown after completing
+     * the upload. This will not abort or revert the upload.
      *
      * @param checkIntegrity <code>true</code> if data integrity should be checked
      * @return this {@code StreamTransferManager} for chaining.
