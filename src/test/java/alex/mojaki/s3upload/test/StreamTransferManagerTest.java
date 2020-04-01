@@ -14,6 +14,7 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.util.AwsHostNameUtils;
 import com.amazonaws.util.IOUtils;
+import com.google.common.base.CaseFormat;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
@@ -80,8 +81,10 @@ public class StreamTransferManagerTest {
                 Constants.PROPERTY_CREDENTIAL);
         String endpoint = s3ProxyProperties.getProperty(
                 Constants.PROPERTY_ENDPOINT);
-        AuthenticationType s3Authorization = AuthenticationType.valueOf(s3ProxyProperties.getProperty(
-                S3ProxyConstants.PROPERTY_AUTHORIZATION));
+        AuthenticationType s3Authorization = AuthenticationType.valueOf(
+                CaseFormat.LOWER_HYPHEN.to(CaseFormat.UPPER_UNDERSCORE,
+                s3ProxyProperties.getProperty(S3ProxyConstants.PROPERTY_AUTHORIZATION))
+        );
         String s3Identity = s3ProxyProperties.getProperty(
                 S3ProxyConstants.PROPERTY_IDENTITY);
         String s3Credential = s3ProxyProperties.getProperty(
