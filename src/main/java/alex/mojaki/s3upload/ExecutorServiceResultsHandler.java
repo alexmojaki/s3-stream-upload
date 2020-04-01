@@ -84,8 +84,6 @@ public class ExecutorServiceResultsHandler<V> implements Iterable<V> {
         if (executorService != null) {
             executorService.shutdownNow();
         }
-        executorService = null;
-        completionService = null;
     }
 
     /**

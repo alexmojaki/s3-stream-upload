@@ -424,6 +424,9 @@ public class StreamTransferManager {
      * stops here.
      */
     public RuntimeException abort(Throwable t) {
+        if (!isAborting) {
+            log.error("Aborting {} due to error: {}", this, t.toString());
+        }
         abort();
         if (t instanceof Error) {
             throw (Error) t;
