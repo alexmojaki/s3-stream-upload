@@ -251,7 +251,20 @@ public class StreamTransferManager {
      * Sets whether data integrity check should be performed during upload.
      * <p>
      * By default integrity check is disabled.
-     * </p>
+     * <p>
+     * Essentially, data integrity check consists of two steps. First, each upload part integrity
+     * is verified. To ensure that data is not corrupted traversing the network, <b>Content-MD5</b>
+     * header is used. When the header is provided, Amazon S3 checks the object against
+     * the provided MD5 value and, if they do not match, returns an error. The header value is the
+     * base64-encoded 128-bit MD5 digest of the request body.
+     * <p>
+     * The second step is to ensure integrity of the final object merged from the uploaded parts.
+     * This is achieved by comparing the expected ETag value with the actual returned by S3.
+     * However, the ETag value is not a MD5 hash. When S3 combines the parts of a multipart upload
+     * into the final object, the ETag value is set to the hex-encoded MD5 hash of the concatenated
+     * binary-encoded MD5 hashes of each part followed by "-" and the number of parts, for instance:
+     * <pre>57f456164b0e5f365aaf9bb549731f32-95</pre>
+     * <b>Please note that the final check is based on undocumented behaviour of S3.</b>
      *
      * @param checkIntegrity <code>true</code> if data integrity should be checked
      * @return this {@code StreamTransferManager} for chaining.
@@ -372,6 +385,9 @@ public class StreamTransferManager {
                 }
             }
             log.info("{}: Completed", this);
+        } catch (IntegrityCheckException e) {
+            // Nothing to abort. Upload has already finished.
+            throw e;
         } catch (Throwable e) {
             throw abort(e);
         }
@@ -382,7 +398,7 @@ public class StreamTransferManager {
         Collections.sort(parts, new PartNumberComparator());
         String expectedETag = computeCompleteFileETag(parts);
         if (!expectedETag.equals(s3ObjectETag)) {
-            throw new RuntimeException(String.format("Integrity check failed. Expected ETag: %s but actual is %s", expectedETag, s3ObjectETag));
+            throw new IntegrityCheckException(String.format("Integrity check failed. Expected ETag: %s but actual is %s", expectedETag, s3ObjectETag));
         }
     }
 
