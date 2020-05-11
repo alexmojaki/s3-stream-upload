@@ -166,7 +166,7 @@ public class StreamTransferManagerTest {
                 .enablePathStyleAccess()
                 .build();
 
-        int numStreams = 2;
+        int numStreams = 1;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client) {
 
             @Override
@@ -187,27 +187,18 @@ public class StreamTransferManagerTest {
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
-        ExecutorService pool = Executors.newFixedThreadPool(numStreams);
         for (int i = 0; i < numStreams; i++) {
             final int streamIndex = i;
             final StringBuilder builder = new StringBuilder();
             builders.add(builder);
-            Runnable task = new Runnable() {
-                @Override
-                public void run() {
-                    MultiPartOutputStream outputStream = streams.get(streamIndex);
-                    for (int lineNum = 0; lineNum < numLines; lineNum++) {
-                        String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
-                        outputStream.write(line.getBytes());
-                        builder.append(line);
-                    }
-                    outputStream.close();
-                }
-            };
-            pool.submit(task);
+            MultiPartOutputStream outputStream = streams.get(streamIndex);
+            for (int lineNum = 0; lineNum < numLines; lineNum++) {
+                String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
+                outputStream.write(line.getBytes());
+                builder.append(line);
+            }
+            outputStream.close();
         }
-        pool.shutdown();
-        pool.awaitTermination(5, TimeUnit.SECONDS);
         manager.complete();
 
         for (int i = 1; i < numStreams; i++) {
