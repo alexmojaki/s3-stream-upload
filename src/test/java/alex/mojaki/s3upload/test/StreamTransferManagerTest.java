@@ -153,7 +153,7 @@ public class StreamTransferManagerTest {
 
     @Test
     public void testTransferManager() throws Exception {
-        testTransferManager(1000000);
+        testTransferManager(10000000);
         testTransferManager(0);
     }
 
