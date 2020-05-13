@@ -83,7 +83,7 @@ public class StreamTransferManagerTest {
                 Constants.PROPERTY_ENDPOINT);
         AuthenticationType s3Authorization = AuthenticationType.valueOf(
                 CaseFormat.LOWER_HYPHEN.to(CaseFormat.UPPER_UNDERSCORE,
-                s3ProxyProperties.getProperty(S3ProxyConstants.PROPERTY_AUTHORIZATION))
+                        s3ProxyProperties.getProperty(S3ProxyConstants.PROPERTY_AUTHORIZATION))
         );
         String s3Identity = s3ProxyProperties.getProperty(
                 S3ProxyConstants.PROPERTY_IDENTITY);
@@ -152,12 +152,31 @@ public class StreamTransferManagerTest {
     }
 
     @Test
-    public void testTransferManager() throws Exception {
-        testTransferManager(10000000);
-        testTransferManager(0);
+    public void testNormal() throws Exception {
+        testTransferManager(1000000, false, true);
     }
 
-    private void testTransferManager(final int numLines) throws Exception {
+    @Test
+    public void testSerial() throws Exception {
+        testTransferManager(1000000, false, false);
+    }
+
+    @Test
+    public void testEmpty() throws Exception {
+        testTransferManager(0, false, true);
+    }
+
+    @Test(expected = RuntimeException.class)
+    public void testException() throws Exception {
+        testTransferManager(10000000, true, true);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void testExceptionSerial() throws Exception {
+        testTransferManager(10000000, true, false);
+    }
+
+    private void testTransferManager(final int numLines, final boolean throwException, boolean parallel) throws Exception {
         AmazonS3 client = AmazonS3ClientBuilder.standard()
                 .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
                 .withClientConfiguration(new ClientConfiguration().withSignerOverride("S3SignerType"))
@@ -166,7 +185,7 @@ public class StreamTransferManagerTest {
                 .enablePathStyleAccess()
                 .build();
 
-        int numStreams = 1;
+        int numStreams = 2;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client) {
 
             @Override
@@ -178,27 +197,45 @@ public class StreamTransferManagerTest {
                 ObjectMetadata metadata = new ObjectMetadata();
                 metadata.setContentType("application/unknown");
                 request.setObjectMetadata(metadata);
+
+                if (throwException) {
+                    throw new RuntimeException("Testing failure");
+                }
             }
         }.numStreams(numStreams)
                 .numUploadThreads(2)
                 .queueCapacity(2)
                 .partSize(10)
-                .checkIntegrity(true);
+//                .checkIntegrity(true)
+                ;
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);
+        ExecutorService pool = Executors.newFixedThreadPool(numStreams);
         for (int i = 0; i < numStreams; i++) {
             final int streamIndex = i;
             final StringBuilder builder = new StringBuilder();
             builders.add(builder);
-            MultiPartOutputStream outputStream = streams.get(streamIndex);
-            for (int lineNum = 0; lineNum < numLines; lineNum++) {
-                String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
-                outputStream.write(line.getBytes());
-                builder.append(line);
+            Runnable task = new Runnable() {
+                @Override
+                public void run() {
+                    MultiPartOutputStream outputStream = streams.get(streamIndex);
+                    for (int lineNum = 0; lineNum < numLines; lineNum++) {
+                        String line = String.format("Stream %d, line %d\n", streamIndex, lineNum);
+                        outputStream.write(line.getBytes());
+                        builder.append(line);
+                    }
+                    outputStream.close();
+                }
+            };
+            if (parallel) {
+                pool.submit(task);
+            } else {
+                task.run();
             }
-            outputStream.close();
         }
+        pool.shutdown();
+        pool.awaitTermination(5, TimeUnit.SECONDS);
         manager.complete();
 
         for (int i = 1; i < numStreams; i++) {

@@ -552,9 +552,6 @@ public class StreamTransferManager {
         }
         customiseUploadPartRequest(uploadRequest);
 
-        if (part.getPartNumber() == 1) {  // part number is not crucial to recreate the issue.
-            throw new AmazonS3Exception("Some exception");
-        }
         UploadPartResult uploadPartResult = s3Client.uploadPart(uploadRequest);
         PartETag partETag = uploadPartResult.getPartETag();
         partETags.add(partETag);
