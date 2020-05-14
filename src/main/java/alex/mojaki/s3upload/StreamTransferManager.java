@@ -117,7 +117,7 @@ public class StreamTransferManager {
     private final List<PartETag> partETags = Collections.synchronizedList(new ArrayList<PartETag>());
     private List<MultiPartOutputStream> multiPartOutputStreams;
     private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
-    private BlockingQueue<StreamPart> queue;
+    private ClosableQueue<StreamPart> queue;
     private int finishedCount = 0;
     private StreamPart leftoverStreamPart = null;
     private final Object leftoverStreamPartLock = new Object();
@@ -320,7 +320,7 @@ public class StreamTransferManager {
             return multiPartOutputStreams;
         }
 
-        queue = new ArrayBlockingQueue<StreamPart>(queueCapacity);
+        queue = new ClosableQueue<StreamPart>(queueCapacity);
         log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
         InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucketName, putKey);
         customiseInitiateRequest(initRequest);
@@ -458,6 +458,9 @@ public class StreamTransferManager {
         }
         if (executorServiceResultsHandler != null) {
             executorServiceResultsHandler.abort();
+        }
+        if (queue != null) {
+            queue.close();
         }
         if (uploadId != null) {
             log.debug("{}: Aborting", this);
