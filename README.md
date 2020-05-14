@@ -15,6 +15,11 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 
 ## Changelog
 
+### 2.2.1
+
+- Exceptions during upload lead to an exception in writers instead of them getting stuck trying to put on the queue.
+- Bump `aws-java-sdk` and `slf4j-api` dependency versions.
+
 ### 2.2.0
 
 - [Add `checkIntegrity()` method](https://github.com/alexmojaki/s3-stream-upload/pull/26) thanks
