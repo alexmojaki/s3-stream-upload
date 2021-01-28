@@ -383,7 +383,7 @@ public class StreamTransferManager {
                         bucketName,
                         putKey,
                         uploadId,
-                        partETags);
+                        Collections.sort(partETags, (PartETag p1, PartETag p2) -> p1.getPartNumber() - p2.getPartNumber()));
                 customiseCompleteRequest(completeRequest);
                 CompleteMultipartUploadResult completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
                 if (checkIntegrity) {
