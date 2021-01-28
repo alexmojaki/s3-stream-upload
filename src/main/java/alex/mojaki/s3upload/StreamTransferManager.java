@@ -379,7 +379,7 @@ public class StreamTransferManager {
                 s3Client.putObject(request);
             } else {
                 List<PartETag> sortedParts = new ArrayList<PartETag>(partETags);
-                Collections.sort(parts, new PartNumberComparator());
+                Collections.sort(sortedParts, new PartNumberComparator());
                 CompleteMultipartUploadRequest completeRequest = new
                         CompleteMultipartUploadRequest(
                         bucketName,
