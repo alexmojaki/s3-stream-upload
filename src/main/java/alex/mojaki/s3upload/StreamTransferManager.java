@@ -378,16 +378,18 @@ public class StreamTransferManager {
                 customisePutEmptyObjectRequest(request);
                 s3Client.putObject(request);
             } else {
+                List<PartETag> sortedParts = new ArrayList<PartETag>(partETags);
+                Collections.sort(parts, new PartNumberComparator());
                 CompleteMultipartUploadRequest completeRequest = new
                         CompleteMultipartUploadRequest(
                         bucketName,
                         putKey,
                         uploadId,
-                        Collections.sort(partETags, (PartETag p1, PartETag p2) -> p1.getPartNumber() - p2.getPartNumber()));
+                        sortedParts);
                 customiseCompleteRequest(completeRequest);
                 CompleteMultipartUploadResult completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
                 if (checkIntegrity) {
-                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag());
+                    checkCompleteFileIntegrity(completeMultipartUploadResult.getETag(), sortedParts);
                 }
             }
             log.info("{}: Completed", this);
@@ -399,10 +401,8 @@ public class StreamTransferManager {
         }
     }
 
-    private void checkCompleteFileIntegrity(String s3ObjectETag) {
-        List<PartETag> parts = new ArrayList<PartETag>(partETags);
-        Collections.sort(parts, new PartNumberComparator());
-        String expectedETag = computeCompleteFileETag(parts);
+    private void checkCompleteFileIntegrity(String s3ObjectETag, List<PartETag> sortedParts) {
+        String expectedETag = computeCompleteFileETag(sortedParts);
         if (!expectedETag.equals(s3ObjectETag)) {
             throw new IntegrityCheckException(String.format(
                     "File upload completed, but integrity check failed. Expected ETag: %s but actual is %s",
