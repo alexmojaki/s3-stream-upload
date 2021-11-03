@@ -561,7 +561,7 @@ public class StreamTransferManager {
     @Override
     public String toString() {
         return String.format("[Manager uploading to %s/%s with id %s]",
-                bucketName, putKey, Utils.skipMiddle(uploadId, 21));
+                bucketName, putKey, Utils.skipMiddle(String.valueOf(uploadId), 21));
     }
 
     // These methods are intended to be overridden for more specific interactions with the AWS API.
