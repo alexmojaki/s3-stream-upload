@@ -15,6 +15,10 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 
 ## Changelog
 
+### 2.2.3
+
+- [Use String.valueOf to protect against null uploadId in toString](https://github.com/alexmojaki/s3-stream-upload/pull/38) thanks to @kcalcagno
+
 ### 2.2.2
 
 - [Sort PartETag list to avoid an InvalidPartOrder error on complete (#34)](https://github.com/alexmojaki/s3-stream-upload/pull/34) thanks to @dana-katzenelson-livongo
