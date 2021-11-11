@@ -370,7 +370,9 @@ public class StreamTransferManager {
             }
             log.debug("{}: Completing", this);
             if (partETags.isEmpty()) {
-                log.debug("{}: Uploading empty stream", this);
+                log.debug("{}: Aborting upload of empty stream", this);
+                abort();
+                log.info("{}: Putting empty object", this);
                 ByteArrayInputStream emptyStream = new ByteArrayInputStream(new byte[]{});
                 ObjectMetadata metadata = new ObjectMetadata();
                 metadata.setContentLength(0);
