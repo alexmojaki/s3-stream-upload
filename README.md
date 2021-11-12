@@ -15,6 +15,11 @@ This is available from [maven central](https://mvnrepository.com/artifact/com.gi
 
 ## Changelog
 
+### 2.2.4
+
+- [Abort multipart upload when content is empty](https://github.com/alexmojaki/s3-stream-upload/pull/41) thanks to @kcalcagno
+
+
 ### 2.2.3
 
 - [Use String.valueOf to protect against null uploadId in toString](https://github.com/alexmojaki/s3-stream-upload/pull/38) thanks to @kcalcagno
