@@ -91,6 +91,7 @@ public class ExecutorServiceResultsHandler<V> implements Iterable<V> {
     /**
      * Convenience method to wait for the callables to finish for when you don't care about the results.
      */
+    @SuppressWarnings({"unused"})
     public void awaitCompletion() {
         //noinspection StatementWithEmptyBody
         for (V ignored : this) {
