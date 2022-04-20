@@ -388,7 +388,7 @@ public class StreamTransferManager {
                         .bucket(bucketName)
                         .key(putKey)
                         .uploadId(uploadId)
-                        .multipartUpload(b -> b.parts(partETags))
+                        .multipartUpload(b -> b.parts(sortedParts))
                         .applyMutation(this::customiseCompleteRequest)
                         .build();
                 CompleteMultipartUploadResponse completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
