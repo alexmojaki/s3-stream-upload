@@ -1,5 +1,7 @@
 package alex.mojaki.s3upload;
 
+import com.amazonaws.util.Base64;
+
 import java.io.InputStream;
 
 /**
@@ -35,6 +37,10 @@ class StreamPart {
 
     public long size() {
         return stream.size();
+    }
+
+    public String getMD5Digest() {
+        return Base64.encodeAsString(stream.getMD5Digest());
     }
 
     @Override

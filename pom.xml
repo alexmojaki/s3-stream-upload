@@ -6,7 +6,7 @@
 
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>2.1.0</version>
+    <version>2.2.4</version>
 
     <name>S3 Stream Upload</name>
     <description>Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in
@@ -44,18 +44,18 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.29</version>
+            <version>1.7.30</version>
         </dependency>
         <dependency>
             <groupId>org.gaul</groupId>
             <artifactId>s3proxy</artifactId>
-            <version>1.4.0</version>
+            <version>1.7.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <version>4.13.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>

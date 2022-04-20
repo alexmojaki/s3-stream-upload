@@ -5,9 +5,13 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.utils.BinaryUtils;
 
+import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.*;
 
@@ -110,10 +114,11 @@ public class StreamTransferManager {
     protected int numUploadThreads = 1;
     protected int queueCapacity = 1;
     protected int partSize = 5 * MB;
+    protected boolean checkIntegrity = false;
     private final List<CompletedPart> partETags = Collections.synchronizedList(new ArrayList<>());
     private List<MultiPartOutputStream> multiPartOutputStreams;
     private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
-    private BlockingQueue<StreamPart> queue;
+    private ClosableQueue<StreamPart> queue;
     private int finishedCount = 0;
     private StreamPart leftoverStreamPart = null;
     private final Object leftoverStreamPartLock = new Object();
@@ -242,6 +247,43 @@ public class StreamTransferManager {
         return this;
     }
 
+    /**
+     * Sets whether a data integrity check should be performed during and after upload.
+     * <p>
+     * By default this is disabled.
+     * <p>
+     * The integrity check consists of two steps. First, each uploaded part
+     * is verified by setting the <b>Content-MD5</b>
+     * header for Amazon S3 to check against its own hash. If they don't match, the AWS SDK
+     * will throw an exception. The header value is the
+     * base64-encoded 128-bit MD5 digest of the part body.
+     * <p>
+     * The second step is to ensure integrity of the final object merged from the uploaded parts.
+     * This is achieved by comparing the expected ETag value with the actual ETag returned by S3.
+     * However, the ETag value is not a MD5 hash. When S3 combines the parts of a multipart upload
+     * into the final object, the ETag value is set to the hex-encoded MD5 hash of the concatenated
+     * binary-encoded MD5 hashes of each part followed by "-" and the number of parts, for instance:
+     * <pre>57f456164b0e5f365aaf9bb549731f32-95</pre>
+     * <b>Note that AWS doesn't document this, so their hashing algorithm might change without
+     * notice which would lead to false alarm exceptions.
+     * </b>
+     * If the ETags don't match, an {@link IntegrityCheckException} will be thrown after completing
+     * the upload. This will not abort or revert the upload.
+     *
+     * @param checkIntegrity <code>true</code> if data integrity should be checked
+     * @return this {@code StreamTransferManager} for chaining.
+     * @throws IllegalStateException if {@link StreamTransferManager#getMultiPartOutputStreams} has already
+     *                               been called, initiating the upload.
+     */
+    public StreamTransferManager checkIntegrity(boolean checkIntegrity) {
+        ensureCanSet();
+        if (checkIntegrity) {
+            Utils.md5();  // check that algorithm is available
+        }
+        this.checkIntegrity = checkIntegrity;
+        return this;
+    }
+
     private void ensureCanSet() {
         if (queue != null) {
             abort();
@@ -279,7 +321,7 @@ public class StreamTransferManager {
             return multiPartOutputStreams;
         }
 
-        queue = new ArrayBlockingQueue<>(queueCapacity);
+        queue = new ClosableQueue<>(queueCapacity);
         log.debug("Initiating multipart upload to {}/{}", bucketName, putKey);
         CreateMultipartUploadRequest initRequest = CreateMultipartUploadRequest.builder()
                 .bucket(bucketName).key(putKey).applyMutation(this::customiseInitiateRequest).build();
@@ -323,13 +365,15 @@ public class StreamTransferManager {
             executorServiceResultsHandler.awaitCompletion();
             log.debug("{}: Pool terminated", this);
             if (leftoverStreamPart != null) {
-                log.info("{}: Uploading leftover stream {}", leftoverStreamPart);
+                log.info("{}: Uploading leftover stream {}", this, leftoverStreamPart);
                 uploadStreamPart(leftoverStreamPart);
                 log.debug("{}: Leftover uploaded", this);
             }
             log.debug("{}: Completing", this);
             if (partETags.isEmpty()) {
-                log.debug("{}: Uploading empty stream", this);
+                log.debug("{}: Aborting upload of empty stream", this);
+                abort();
+                log.info("{}: Putting empty object", this);
                 PutObjectRequest request = PutObjectRequest.builder()
                         .bucket(bucketName)
                         .key(putKey)
@@ -338,6 +382,8 @@ public class StreamTransferManager {
                         .build();
                 s3Client.putObject(request, RequestBody.empty());
             } else {
+                List<CompletedPart> sortedParts = new ArrayList<CompletedPart>(partETags);
+                Collections.sort(sortedParts, new PartNumberComparator());
                 CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
                         .bucket(bucketName)
                         .key(putKey)
@@ -345,12 +391,39 @@ public class StreamTransferManager {
                         .multipartUpload(b -> b.parts(partETags))
                         .applyMutation(this::customiseCompleteRequest)
                         .build();
-                s3Client.completeMultipartUpload(completeRequest);
+                CompleteMultipartUploadResponse completeMultipartUploadResult = s3Client.completeMultipartUpload(completeRequest);
+                if (checkIntegrity) {
+                    checkCompleteFileIntegrity(completeMultipartUploadResult.eTag(), sortedParts);
+                }
             }
             log.info("{}: Completed", this);
+        } catch (IntegrityCheckException e) {
+            // Nothing to abort. Upload has already finished.
+            throw e;
         } catch (Throwable e) {
             throw abort(e);
         }
+    }
+
+    private void checkCompleteFileIntegrity(String s3ObjectETag, List<CompletedPart> sortedParts) {
+        String expectedETag = computeCompleteFileETag(sortedParts);
+        if (!expectedETag.equals(s3ObjectETag)) {
+            throw new IntegrityCheckException(String.format(
+                    "File upload completed, but integrity check failed. Expected ETag: %s but actual is %s",
+                    expectedETag, s3ObjectETag));
+        }
+    }
+
+    private String computeCompleteFileETag(List<CompletedPart> parts) {
+        // When S3 combines the parts of a multipart upload into the final object, the ETag value is set to the
+        // hex-encoded MD5 hash of the concatenated binary-encoded (raw bytes) MD5 hashes of each part followed by
+        // "-" and the number of parts.
+        MessageDigest md = Utils.md5();
+        for (CompletedPart partETag : parts) {
+            md.update(BinaryUtils.fromHex(partETag.eTag()));
+        }
+        // Represent byte array as a 32-digit number hexadecimal format followed by "-<partCount>".
+        return String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
     }
 
     /**
@@ -359,6 +432,9 @@ public class StreamTransferManager {
      * stops here.
      */
     public RuntimeException abort(Throwable t) {
+        if (!isAborting) {
+            log.error("Aborting {} due to error: {}", this, t.toString());
+        }
         abort();
         if (t instanceof Error) {
             throw (Error) t;
@@ -386,6 +462,9 @@ public class StreamTransferManager {
         }
         if (executorServiceResultsHandler != null) {
             executorServiceResultsHandler.abort();
+        }
+        if (queue != null) {
+            queue.close();
         }
         if (uploadId != null) {
             log.debug("{}: Aborting", this);
@@ -467,11 +546,15 @@ public class StreamTransferManager {
     private void uploadStreamPart(StreamPart part) {
         log.debug("{}: Uploading {}", this, part);
 
-        UploadPartRequest uploadRequest = UploadPartRequest.builder()
+        UploadPartRequest.Builder builder = UploadPartRequest.builder()
                 .bucket(bucketName)
                 .key(putKey)
                 .uploadId(uploadId)
-                .partNumber(part.getPartNumber())
+                .partNumber(part.getPartNumber());
+        if(checkIntegrity) {
+            builder.contentMD5(part.getMD5Digest());
+        }
+        UploadPartRequest uploadRequest = builder
                 .applyMutation(this::customiseUploadPartRequest)
                 .build();
 
@@ -487,7 +570,7 @@ public class StreamTransferManager {
     @Override
     public String toString() {
         return String.format("[Manager uploading to %s/%s with id %s]",
-                bucketName, putKey, Utils.skipMiddle(uploadId, 21));
+                bucketName, putKey, Utils.skipMiddle(String.valueOf(uploadId), 21));
     }
 
     // These methods are intended to be overridden for more specific interactions with the AWS API.
@@ -508,4 +591,16 @@ public class StreamTransferManager {
     public void customisePutEmptyObjectRequest(PutObjectRequest.Builder requestBuilder) {
     }
 
+    private static class PartNumberComparator implements Comparator<CompletedPart> {
+        @Override
+        public int compare(CompletedPart o1, CompletedPart o2) {
+            int partNumber1 = o1.partNumber();
+            int partNumber2 = o2.partNumber();
+
+            if (partNumber1 == partNumber2) {
+                return 0;
+            }
+            return partNumber1 > partNumber2 ? 1 : -1;
+        }
+    }
 }
