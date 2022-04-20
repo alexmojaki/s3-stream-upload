@@ -6,7 +6,7 @@
 
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>2.2.4</version>
+    <version>2.2.5-SNAPSHOT</version>
 
     <name>S3 Stream Upload</name>
     <description>Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in
@@ -47,12 +47,6 @@
             <version>1.7.30</version>
         </dependency>
         <dependency>
-            <groupId>org.gaul</groupId>
-            <artifactId>s3proxy</artifactId>
-            <version>1.7.0</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.13.1</version>
@@ -77,7 +71,7 @@
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>bom</artifactId>
-                <version>2.10.56</version>
+                <version>2.17.173</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
