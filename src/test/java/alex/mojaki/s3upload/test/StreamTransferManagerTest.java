@@ -32,8 +32,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 /**
- * A WIP test using s3proxy to avoid requiring actually connecting to a real S3
- * bucket.
+ * Stream transfer manager test class using a mocked AWS SDK S3Client
  */
 @RunWith(Parameterized.class)
 public class StreamTransferManagerTest {
