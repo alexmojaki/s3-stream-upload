@@ -6,6 +6,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -19,6 +24,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import alex.mojaki.s3upload.MultiPartOutputStream;
 import alex.mojaki.s3upload.StreamTransferManager;
@@ -26,10 +33,12 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
+import software.amazon.awssdk.utils.BinaryUtils;
 
 /**
  * Stream transfer manager test class using a mocked AWS SDK S3Client
@@ -42,9 +51,11 @@ public class StreamTransferManagerTest {
     private S3Client client;
     private int numLines;
     private int wantedUploadPartsCount;
+    private boolean checkIntegrity;
 
-    public StreamTransferManagerTest(int numLines, int wantedUploadPartsCount) {
+    public StreamTransferManagerTest(int numLines, boolean checkIntegrity, int wantedUploadPartsCount) {
         this.numLines = numLines;
+        this.checkIntegrity = checkIntegrity;
         this.wantedUploadPartsCount = wantedUploadPartsCount;
         key = numLines + "-lines";
     }
@@ -54,21 +65,46 @@ public class StreamTransferManagerTest {
         CreateMultipartUploadResponse createMultipartUploadResponse = mock(CreateMultipartUploadResponse.class);
         when(createMultipartUploadResponse.uploadId()).thenReturn(UUID.randomUUID().toString());
 
-        UploadPartResponse uploadPartResponse = mock(UploadPartResponse.class);
-        when(uploadPartResponse.eTag()).thenReturn(UUID.randomUUID().toString());
-
-        CompleteMultipartUploadResponse completeMultipartUploadResponse = mock(
-                CompleteMultipartUploadResponse.class);
-
         client = mock(S3Client.class);
         when(client.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
                 .thenReturn(createMultipartUploadResponse);
                 
         if(wantedUploadPartsCount > 0) {
+            Answer<UploadPartResponse> uploadPartAnswer = new Answer<UploadPartResponse>() {
+                public UploadPartResponse answer(InvocationOnMock invocation) {                   
+                    RequestBody requestBody = (RequestBody) invocation.getArgument(1);
+                    try(InputStream is = requestBody.contentStreamProvider().newStream()) {
+                        String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
+                        return UploadPartResponse.builder().eTag(md5).build();
+                    } catch (IOException ioe) {
+                        throw new RuntimeException("unable to process md5 for upload part");
+                    }
+                }
+            };
+            Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = new Answer<CompleteMultipartUploadResponse>() {
+                public CompleteMultipartUploadResponse answer(InvocationOnMock invocation) {
+                    CompleteMultipartUploadRequest uploadRequest = (CompleteMultipartUploadRequest) invocation.getArgument(0);
+                    try {
+                        MessageDigest md = MessageDigest.getInstance("MD5");
+                        md.reset();
+                        List<CompletedPart> parts = uploadRequest.multipartUpload()
+                            .parts();
+                        parts.stream()
+                            .map(x -> BinaryUtils.fromHex(x.eTag()))
+                            .forEach( x -> md.update(x));
+                        String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
+                        return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
+                    }
+                    catch (NoSuchAlgorithmException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            };
+
             when(client.uploadPart(any(UploadPartRequest.class), any(RequestBody.class)))
-            .thenReturn(uploadPartResponse);
+                .thenAnswer(uploadPartAnswer);
             when(client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
-            .thenReturn(completeMultipartUploadResponse);
+                .thenAnswer(completeMultipartUploadAnswer);
         }
     }
 
@@ -79,6 +115,7 @@ public class StreamTransferManagerTest {
         int queueCapacity = 2;
         int partSize = 10;
         final StreamTransferManager manager = new StreamTransferManager(containerName, key, client)
+                .checkIntegrity(checkIntegrity)
                 .numStreams(numStreams)
                 .numUploadThreads(numUploadThreads)
                 .queueCapacity(queueCapacity)
@@ -113,7 +150,15 @@ public class StreamTransferManagerTest {
     }
 
     @Parameterized.Parameters
-    public static Collection<Integer[]> input() {
-        return Arrays.asList(new Integer[][]{{1000000, 4}, {500000, 2}, {100000,1}, {1,1}, {0,0}});
+    public static Collection<Object[]> input() {
+        return Arrays.asList(
+            new Object[][]{
+                {1000000, false, 4}, 
+                {1000000, true, 4}, 
+                {500000, false, 2}, 
+                {100000, false, 1}, 
+                {1, false, 1}, 
+                {0, false, 0}
+            });
     }
 }
