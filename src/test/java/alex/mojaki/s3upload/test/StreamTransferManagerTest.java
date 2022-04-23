@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -63,52 +62,44 @@ public class StreamTransferManagerTest {
         client = mock(S3Client.class);
         when(client.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
                 .thenReturn(createMultipartUploadResponse);
-                
-        if(wantedUploadPartsCount > 0) {
-            Answer<UploadPartResponse> uploadPartAnswer = invocation -> {
+
+        if (wantedUploadPartsCount == 0) {
+            return;
+        }
+
+        Answer<UploadPartResponse> uploadPartAnswer = invocation -> {
                 RequestBody requestBody = invocation.getArgument(1);
                 try (InputStream is = requestBody.contentStreamProvider().newStream()) {
                     String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
                     return UploadPartResponse.builder().eTag(md5).build();
                 }
             };
-            Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = invocation -> {
+        Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = invocation -> {
                 CompleteMultipartUploadRequest uploadRequest = invocation.getArgument(0);
-                try {
-                    MessageDigest md = MessageDigest.getInstance("MD5");
-                    md.reset();
-                    List<CompletedPart> parts = uploadRequest.multipartUpload()
-                            .parts();
-                    parts.stream()
-                            .map(x -> BinaryUtils.fromHex(x.eTag()))
-                            .forEach(md::update);
-                    String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
-                    return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
-                } catch (NoSuchAlgorithmException e) {
-                    throw new RuntimeException(e);
-                }
+                MessageDigest md = MessageDigest.getInstance("MD5");
+                md.reset();
+                List<CompletedPart> parts = uploadRequest.multipartUpload().parts();
+                parts.forEach(part -> md.update(BinaryUtils.fromHex(part.eTag())));
+                String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
+                return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
             };
 
-            when(client.uploadPart(any(UploadPartRequest.class), any(RequestBody.class)))
+        when(client.uploadPart(any(UploadPartRequest.class), any(RequestBody.class)))
                 .thenAnswer(uploadPartAnswer);
-            when(client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
+        when(client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
                 .thenAnswer(completeMultipartUploadAnswer);
-        }
     }
 
     @Test
     public void testTransferManager() throws Exception {
         int numStreams = 2;
-        int numUploadThreads = 2;
-        int queueCapacity = 2;
-        int partSize = 10;
         String key = numLines + "-lines";
         final StreamTransferManager manager = new StreamTransferManager("bucketName", key, client)
                 .checkIntegrity(checkIntegrity)
                 .numStreams(numStreams)
-                .numUploadThreads(numUploadThreads)
-                .queueCapacity(queueCapacity)
-                .partSize(partSize);
+                .numUploadThreads(2)
+                .queueCapacity(2)
+                .partSize(10);
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<>(numStreams);
