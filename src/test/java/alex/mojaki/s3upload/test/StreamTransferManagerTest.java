@@ -6,7 +6,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
@@ -24,7 +23,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import alex.mojaki.s3upload.MultiPartOutputStream;
@@ -46,22 +44,19 @@ import software.amazon.awssdk.utils.BinaryUtils;
 @RunWith(Parameterized.class)
 public class StreamTransferManagerTest {
 
-    private final String containerName = "bucketName";
-    private String key;
     private S3Client client;
-    private int numLines;
-    private int wantedUploadPartsCount;
-    private boolean checkIntegrity;
+    private final int numLines;
+    private final int wantedUploadPartsCount;
+    private final boolean checkIntegrity;
 
     public StreamTransferManagerTest(int numLines, boolean checkIntegrity, int wantedUploadPartsCount) {
         this.numLines = numLines;
         this.checkIntegrity = checkIntegrity;
         this.wantedUploadPartsCount = wantedUploadPartsCount;
-        key = numLines + "-lines";
     }
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         CreateMultipartUploadResponse createMultipartUploadResponse = mock(CreateMultipartUploadResponse.class);
         when(createMultipartUploadResponse.uploadId()).thenReturn(UUID.randomUUID().toString());
 
@@ -70,34 +65,27 @@ public class StreamTransferManagerTest {
                 .thenReturn(createMultipartUploadResponse);
                 
         if(wantedUploadPartsCount > 0) {
-            Answer<UploadPartResponse> uploadPartAnswer = new Answer<UploadPartResponse>() {
-                public UploadPartResponse answer(InvocationOnMock invocation) {                   
-                    RequestBody requestBody = (RequestBody) invocation.getArgument(1);
-                    try(InputStream is = requestBody.contentStreamProvider().newStream()) {
-                        String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
-                        return UploadPartResponse.builder().eTag(md5).build();
-                    } catch (IOException ioe) {
-                        throw new RuntimeException("unable to process md5 for upload part");
-                    }
+            Answer<UploadPartResponse> uploadPartAnswer = invocation -> {
+                RequestBody requestBody = invocation.getArgument(1);
+                try (InputStream is = requestBody.contentStreamProvider().newStream()) {
+                    String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
+                    return UploadPartResponse.builder().eTag(md5).build();
                 }
             };
-            Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = new Answer<CompleteMultipartUploadResponse>() {
-                public CompleteMultipartUploadResponse answer(InvocationOnMock invocation) {
-                    CompleteMultipartUploadRequest uploadRequest = (CompleteMultipartUploadRequest) invocation.getArgument(0);
-                    try {
-                        MessageDigest md = MessageDigest.getInstance("MD5");
-                        md.reset();
-                        List<CompletedPart> parts = uploadRequest.multipartUpload()
+            Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = invocation -> {
+                CompleteMultipartUploadRequest uploadRequest = invocation.getArgument(0);
+                try {
+                    MessageDigest md = MessageDigest.getInstance("MD5");
+                    md.reset();
+                    List<CompletedPart> parts = uploadRequest.multipartUpload()
                             .parts();
-                        parts.stream()
+                    parts.stream()
                             .map(x -> BinaryUtils.fromHex(x.eTag()))
-                            .forEach( x -> md.update(x));
-                        String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
-                        return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
-                    }
-                    catch (NoSuchAlgorithmException e) {
-                        throw new RuntimeException(e);
-                    }
+                            .forEach(md::update);
+                    String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
+                    return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
+                } catch (NoSuchAlgorithmException e) {
+                    throw new RuntimeException(e);
                 }
             };
 
@@ -114,7 +102,8 @@ public class StreamTransferManagerTest {
         int numUploadThreads = 2;
         int queueCapacity = 2;
         int partSize = 10;
-        final StreamTransferManager manager = new StreamTransferManager(containerName, key, client)
+        String key = numLines + "-lines";
+        final StreamTransferManager manager = new StreamTransferManager("bucketName", key, client)
                 .checkIntegrity(checkIntegrity)
                 .numStreams(numStreams)
                 .numUploadThreads(numUploadThreads)
