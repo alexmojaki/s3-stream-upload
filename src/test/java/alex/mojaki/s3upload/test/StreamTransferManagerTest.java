@@ -56,17 +56,17 @@ public class StreamTransferManagerTest {
 
     @Parameterized.Parameters
     public static Collection<Object[]> input() {
-        return Arrays.asList(
-                new Object[][]{
-                        {1000000, false, 4},
-                        {1000000, true, 4},
-                        {500000, false, 2},
-                        {100000, false, 1},
-                        {1, false, 1},
-                        {0, false, 0}
-                });
+        Object[][] arr = {
+            {1000000, false, 4},
+            {1000000, true, 4},
+            {500000, false, 2},
+            {100000, false, 1},
+            {1, false, 1},
+            {0, false, 0}
+        };
+        return Arrays.asList(arr);
     }
-    
+
     @Before
     public void setUp() {
         CreateMultipartUploadResponse createMultipartUploadResponse = mock(CreateMultipartUploadResponse.class);
@@ -81,21 +81,21 @@ public class StreamTransferManagerTest {
         }
 
         Answer<UploadPartResponse> uploadPartAnswer = invocation -> {
-                RequestBody requestBody = invocation.getArgument(1);
-                try (InputStream is = requestBody.contentStreamProvider().newStream()) {
-                    String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
-                    return UploadPartResponse.builder().eTag(md5).build();
-                }
-            };
+            RequestBody requestBody = invocation.getArgument(1);
+            try (InputStream is = requestBody.contentStreamProvider().newStream()) {
+                String md5 = org.apache.commons.codec.digest.DigestUtils.md5Hex(is);
+                return UploadPartResponse.builder().eTag(md5).build();
+            }
+        };
         Answer<CompleteMultipartUploadResponse> completeMultipartUploadAnswer = invocation -> {
-                CompleteMultipartUploadRequest uploadRequest = invocation.getArgument(0);
-                MessageDigest md = MessageDigest.getInstance("MD5");
-                md.reset();
-                List<CompletedPart> parts = uploadRequest.multipartUpload().parts();
-                parts.forEach(part -> md.update(BinaryUtils.fromHex(part.eTag())));
-                String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
-                return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
-            };
+            CompleteMultipartUploadRequest uploadRequest = invocation.getArgument(0);
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.reset();
+            List<CompletedPart> parts = uploadRequest.multipartUpload().parts();
+            parts.forEach(part -> md.update(BinaryUtils.fromHex(part.eTag())));
+            String eTag = String.format("%032x-%d", new BigInteger(1, md.digest()), parts.size());
+            return CompleteMultipartUploadResponse.builder().eTag(eTag).build();
+        };
 
         when(client.uploadPart(any(UploadPartRequest.class), any(RequestBody.class)))
                 .thenAnswer(uploadPartAnswer);
@@ -136,7 +136,7 @@ public class StreamTransferManagerTest {
         manager.complete();
 
         verify(client).createMultipartUpload(any(CreateMultipartUploadRequest.class));
-        if(wantedUploadPartsCount > 0) {
+        if (wantedUploadPartsCount > 0) {
             verify(client, times(wantedUploadPartsCount)).uploadPart(any(UploadPartRequest.class), any(RequestBody.class));
             verify(client).completeMultipartUpload(any(CompleteMultipartUploadRequest.class));
         }
