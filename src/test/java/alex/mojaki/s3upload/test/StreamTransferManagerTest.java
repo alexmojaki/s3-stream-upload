@@ -54,6 +54,19 @@ public class StreamTransferManagerTest {
         this.wantedUploadPartsCount = wantedUploadPartsCount;
     }
 
+    @Parameterized.Parameters
+    public static Collection<Object[]> input() {
+        return Arrays.asList(
+                new Object[][]{
+                        {1000000, false, 4},
+                        {1000000, true, 4},
+                        {500000, false, 2},
+                        {100000, false, 1},
+                        {1, false, 1},
+                        {0, false, 0}
+                });
+    }
+    
     @Before
     public void setUp() {
         CreateMultipartUploadResponse createMultipartUploadResponse = mock(CreateMultipartUploadResponse.class);
@@ -129,16 +142,4 @@ public class StreamTransferManagerTest {
         }
     }
 
-    @Parameterized.Parameters
-    public static Collection<Object[]> input() {
-        return Arrays.asList(
-            new Object[][]{
-                {1000000, false, 4}, 
-                {1000000, true, 4}, 
-                {500000, false, 2}, 
-                {100000, false, 1}, 
-                {1, false, 1}, 
-                {0, false, 0}
-            });
-    }
 }
