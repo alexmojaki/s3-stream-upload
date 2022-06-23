@@ -206,7 +206,8 @@ public class StreamTransferManagerTest {
                 .numUploadThreads(2)
                 .queueCapacity(2)
                 .partSize(10)
-                .checkIntegrity(true);
+                .checkIntegrity(true)
+                .setContentType("application/pdf");
 
         final List<MultiPartOutputStream> streams = manager.getMultiPartOutputStreams();
         List<StringBuilder> builders = new ArrayList<StringBuilder>(numStreams);

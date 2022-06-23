@@ -114,6 +114,7 @@ public class StreamTransferManager {
     protected int queueCapacity = 1;
     protected int partSize = 5 * MB;
     protected boolean checkIntegrity = false;
+    protected String contentType = "application/octet-stream";
     private final List<PartETag> partETags = Collections.synchronizedList(new ArrayList<PartETag>());
     private List<MultiPartOutputStream> multiPartOutputStreams;
     private ExecutorServiceResultsHandler<Void> executorServiceResultsHandler;
@@ -247,6 +248,23 @@ public class StreamTransferManager {
     }
 
     /**
+     * Sets the Content-Type of the object that is getting uploaded to s3
+     * <p>
+     * By default, this is application/octet-stream
+     * <p>
+     *
+     * @return this {@code StreamTransferManager} for chaining.
+     */
+    public StreamTransferManager setContentType(String contentType){
+        ensureCanSet();
+        if(null == contentType){
+            return this;
+        }
+        this.contentType = contentType;
+        return this;
+    }
+
+    /**
      * Sets whether a data integrity check should be performed during and after upload.
      * <p>
      * By default this is disabled.
@@ -376,6 +394,8 @@ public class StreamTransferManager {
                 ByteArrayInputStream emptyStream = new ByteArrayInputStream(new byte[]{});
                 ObjectMetadata metadata = new ObjectMetadata();
                 metadata.setContentLength(0);
+                metadata.setContentType(contentType);
+
                 PutObjectRequest request = new PutObjectRequest(bucketName, putKey, emptyStream, metadata);
                 customisePutEmptyObjectRequest(request);
                 s3Client.putObject(request);
