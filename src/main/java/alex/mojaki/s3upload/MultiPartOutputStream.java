@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.OutputStream;
 import java.util.concurrent.BlockingQueue;
 
-import static com.amazonaws.services.s3.internal.Constants.MB;
+import static alex.mojaki.s3upload.StreamTransferManager.MB;
 
 /**
  * An {@code OutputStream} which packages data written to it into discrete {@link StreamPart}s which can be obtained
