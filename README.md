@@ -1,5 +1,7 @@
 # S3 Stream Upload
 
+**This library is only needed for the old AWS SDK v1. This functionality is built into v2: https://docs.aws.amazon.com/AmazonS3/latest/API/s3_example_s3_Scenario_UploadStream_section.html**
+
 This library allows you to efficiently stream large amounts of data to AWS S3 in Java without having to store the whole object in memory or use files. The S3 API requires that a content
 length be set before starting uploading, which is a problem when you want to calculate a large amount of data on the fly.
 The standard Java AWS SDK will simply buffer all the data in memory so that it can calculate the length, which consumes
