@@ -1,6 +1,6 @@
 package alex.mojaki.s3upload;
 
-import com.amazonaws.util.Base64;
+import software.amazon.awssdk.utils.BinaryUtils;
 
 import java.io.InputStream;
 
@@ -40,7 +40,7 @@ class StreamPart {
     }
 
     public String getMD5Digest() {
-        return Base64.encodeAsString(stream.getMD5Digest());
+        return BinaryUtils.toBase64(stream.getMD5Digest());
     }
 
     @Override

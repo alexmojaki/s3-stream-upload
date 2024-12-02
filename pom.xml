@@ -6,7 +6,7 @@
 
     <groupId>com.github.alexmojaki</groupId>
     <artifactId>s3-stream-upload</artifactId>
-    <version>2.2.4</version>
+    <version>2.2.5-SNAPSHOT</version>
 
     <name>S3 Stream Upload</name>
     <description>Manages streaming of data to S3 without knowing the size beforehand and without keeping it all in
@@ -38,19 +38,26 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk-s3</artifactId>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sso</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssooidc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.30</version>
+            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.gaul</groupId>
-            <artifactId>s3proxy</artifactId>
-            <version>1.7.0</version>
-            <scope>test</scope>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -63,9 +70,9 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.amazonaws</groupId>
-                <artifactId>aws-java-sdk-bom</artifactId>
-                <version>1.11.782</version>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -74,6 +81,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <slf4j.version>2.0.16</slf4j.version>  <!-- Aug 2024 -->
+        <awssdk.version>2.27.24</awssdk.version>  <!-- Sep 2024 -->
     </properties>
 
     <build>
@@ -83,8 +92,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>2.3.2</version>
                 <configuration>
-                    <source>1.6</source>
-                    <target>1.6</target>
+                    <source>8</source>
+                    <target>8</target>
                 </configuration>
             </plugin>
             <plugin>
